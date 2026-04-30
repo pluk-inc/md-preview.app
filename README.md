@@ -69,7 +69,7 @@ appcast.xml         Sparkle update feed
 
 ## Releasing
 
-Releases are driven by [Amore](https://github.com/Amore-app/amore-cli) — it handles building, code signing, notarization, DMG creation, S3 upload, and Sparkle appcast publishing in one shot.
+Releases are driven by [Amore](http://amore.computer/) — it handles building, code signing, notarization, DMG creation, S3 upload, and Sparkle appcast publishing in one shot.
 
 Bump `MARKETING_VERSION` and `CURRENT_PROJECT_VERSION` in `Version.xcconfig`, then:
 
