@@ -7,9 +7,8 @@ import Foundation
 import Ink
 
 enum MarkdownHTML {
-    private static let parser = MarkdownParser()
-
     static func makeHTML(from markdown: String, allowsScroll: Bool = false) -> String {
+        let parser = MarkdownParser()
         let body = injectHeadingIDs(in: parser.html(from: markdown))
         let scrollOverride = allowsScroll ? """
         <style>
@@ -208,6 +207,15 @@ enum MarkdownHTML {
         height: auto;
         margin: 1.6em auto;
         border-radius: 10px;
+    }
+    p img {
+        display: inline-block;
+        vertical-align: middle;
+        margin: 0 0.35em 0.35em 0;
+    }
+    p > img:only-child {
+        display: block;
+        margin: 1.6em auto;
     }
 
     strong { font-weight: 600; }

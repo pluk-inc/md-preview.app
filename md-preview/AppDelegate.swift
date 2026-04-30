@@ -31,6 +31,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSToolbarDelegate, NSSharing
     private var hasLaunched = false
     private var currentFileURL: URL?
     private var currentMarkdown: String?
+    private var fileWatcher: FileWatcher?
     private var isInspectorToggleSelected = false
     private weak var openWithItem: NSMenuToolbarItem?
     private weak var inspectorItem: NSToolbarItem?
@@ -84,19 +85,35 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSToolbarDelegate, NSSharing
         NSDocumentController.shared.noteNewRecentDocumentURL(url)
         refreshOpenWithItem()
         loadFile(at: url)
-        offerToBecomeDefaultHandlerOnce()
+        startWatching(url)
+        offerToBecomeDefaultHandlerIfNeeded()
+    }
+
+    private func startWatching(_ url: URL) {
+        fileWatcher?.cancel()
+        fileWatcher = FileWatcher(url: url) { [weak self] in
+            guard let self, self.currentFileURL == url else { return }
+            self.loadFile(at: url, silentOnFailure: true)
+        }
     }
 
     private static let didOfferDefaultHandlerKey = "MarkdownPreview.didOfferAsDefaultHandler"
 
-    private func offerToBecomeDefaultHandlerOnce() {
+    private func offerToBecomeDefaultHandlerIfNeeded() {
         let key = Self.didOfferDefaultHandlerKey
         guard !UserDefaults.standard.bool(forKey: key) else { return }
-        UserDefaults.standard.set(true, forKey: key)
 
         guard let markdownType = UTType("net.daringfireball.markdown")
                 ?? UTType(filenameExtension: "md") else { return }
 
+        let currentDefaultID = NSWorkspace.shared.urlForApplication(toOpen: markdownType)
+            .flatMap { Bundle(url: $0)?.bundleIdentifier }
+        if currentDefaultID == Bundle.main.bundleIdentifier {
+            UserDefaults.standard.set(true, forKey: key)
+            return
+        }
+
+        UserDefaults.standard.set(true, forKey: key)
         Task {
             try? await NSWorkspace.shared.setDefaultApplication(
                 at: Bundle.main.bundleURL,
@@ -533,7 +550,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSToolbarDelegate, NSSharing
         return panel
     }
 
-    private func loadFile(at url: URL) {
+    private func loadFile(at url: URL, silentOnFailure: Bool = false) {
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             let result = Result { try String(contentsOf: url, encoding: .utf8) }
             DispatchQueue.main.async {
@@ -544,9 +561,77 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSToolbarDelegate, NSSharing
                     (self.window.contentViewController as? MainSplitViewController)?
                         .display(markdown: text, fileName: url.lastPathComponent, url: url)
                 case .failure(let error):
-                    NSAlert(error: error).beginSheetModal(for: self.window)
+                    if !silentOnFailure {
+                        NSAlert(error: error).beginSheetModal(for: self.window)
+                    }
                 }
             }
         }
+    }
+}
+
+private final class FileWatcher {
+    private let url: URL
+    private let onChange: () -> Void
+    private var source: DispatchSourceFileSystemObject?
+    private var fileDescriptor: Int32 = -1
+    private var debounce: DispatchWorkItem?
+
+    init(url: URL, onChange: @escaping () -> Void) {
+        self.url = url
+        self.onChange = onChange
+        open()
+    }
+
+    private func open() {
+        let fd = Darwin.open(url.path, O_EVTONLY)
+        guard fd >= 0 else { return }
+        fileDescriptor = fd
+
+        let source = DispatchSource.makeFileSystemObjectSource(
+            fileDescriptor: fd,
+            eventMask: [.write, .extend, .delete, .rename, .revoke],
+            queue: .main
+        )
+        source.setEventHandler { [weak self] in
+            guard let self, let source = self.source else { return }
+            let event = source.data
+            self.scheduleChange()
+            // Atomic-rename saves (Vim, VS Code, etc.) replace the inode;
+            // re-open the watcher against the path so we keep tracking.
+            if !event.intersection([.delete, .rename, .revoke]).isEmpty {
+                self.reopen()
+            }
+        }
+        source.setCancelHandler { [weak self] in
+            guard let self else { return }
+            if self.fileDescriptor >= 0 {
+                Darwin.close(self.fileDescriptor)
+                self.fileDescriptor = -1
+            }
+        }
+        self.source = source
+        source.resume()
+    }
+
+    private func reopen() {
+        source?.cancel()
+        source = nil
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { [weak self] in
+            self?.open()
+        }
+    }
+
+    private func scheduleChange() {
+        debounce?.cancel()
+        let work = DispatchWorkItem { [weak self] in self?.onChange() }
+        debounce = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.08, execute: work)
+    }
+
+    func cancel() {
+        debounce?.cancel()
+        source?.cancel()
+        source = nil
     }
 }
