@@ -20,14 +20,21 @@
         <customObject id="YLy-65-1bz" customClass="NSFontManager"/>
         <menu title="Main Menu" systemMenu="main" id="AYu-sK-qS6">
             <items>
-                <menuItem title="md-preview" id="1Xt-HY-uBw">
+                <menuItem title="Markdown Preview" id="1Xt-HY-uBw">
                     <modifierMask key="keyEquivalentModifierMask"/>
-                    <menu key="submenu" title="md-preview" systemMenu="apple" id="uQy-DD-JDr">
+                    <menu key="submenu" title="Markdown Preview" systemMenu="apple" id="uQy-DD-JDr">
                         <items>
-                            <menuItem title="About md-preview" id="5kV-Vb-QxS">
+                            <menuItem title="About Markdown Preview" id="5kV-Vb-QxS">
                                 <modifierMask key="keyEquivalentModifierMask"/>
                                 <connections>
                                     <action selector="orderFrontStandardAboutPanel:" target="-1" id="Exp-CZ-Vem"/>
+                                </connections>
+                            </menuItem>
+                            <menuItem isSeparatorItem="YES" id="spk-sp-sep"/>
+                            <menuItem title="Check for Updates…" id="spk-cu-itm">
+                                <modifierMask key="keyEquivalentModifierMask"/>
+                                <connections>
+                                    <action selector="checkForUpdates:" target="Voe-Tx-rLC" id="spk-cu-act"/>
                                 </connections>
                             </menuItem>
                             <menuItem isSeparatorItem="YES" id="VOq-y0-SEH"/>
@@ -38,7 +45,7 @@
                                 <menu key="submenu" title="Services" systemMenu="services" id="hz9-B4-Xy5"/>
                             </menuItem>
                             <menuItem isSeparatorItem="YES" id="4je-JR-u6R"/>
-                            <menuItem title="Hide md-preview" keyEquivalent="h" id="Olw-nP-bQN">
+                            <menuItem title="Hide Markdown Preview" keyEquivalent="h" id="Olw-nP-bQN">
                                 <connections>
                                     <action selector="hide:" target="-1" id="PnN-Uc-m68"/>
                                 </connections>
@@ -56,7 +63,7 @@
                                 </connections>
                             </menuItem>
                             <menuItem isSeparatorItem="YES" id="kCx-OE-vgT"/>
-                            <menuItem title="Quit md-preview" keyEquivalent="q" id="4sb-4s-VLi">
+                            <menuItem title="Quit Markdown Preview" keyEquivalent="q" id="4sb-4s-VLi">
                                 <connections>
                                     <action selector="terminate:" target="-1" id="Te7-pn-YzF"/>
                                 </connections>
@@ -181,28 +188,28 @@
                                     <items>
                                         <menuItem title="Find…" tag="1" keyEquivalent="f" id="Xz5-n4-O0W">
                                             <connections>
-                                                <action selector="performFindPanelAction:" target="-1" id="cD7-Qs-BN4"/>
+                                                <action selector="performFindPanelAction:" target="Voe-Tx-rLC" id="cD7-Qs-BN4"/>
                                             </connections>
                                         </menuItem>
                                         <menuItem title="Find and Replace…" tag="12" keyEquivalent="f" id="YEy-JH-Tfz">
                                             <modifierMask key="keyEquivalentModifierMask" option="YES" command="YES"/>
                                             <connections>
-                                                <action selector="performFindPanelAction:" target="-1" id="WD3-Gg-5AJ"/>
+                                                <action selector="performFindPanelAction:" target="Voe-Tx-rLC" id="WD3-Gg-5AJ"/>
                                             </connections>
                                         </menuItem>
                                         <menuItem title="Find Next" tag="2" keyEquivalent="g" id="q09-fT-Sye">
                                             <connections>
-                                                <action selector="performFindPanelAction:" target="-1" id="NDo-RZ-v9R"/>
+                                                <action selector="performFindPanelAction:" target="Voe-Tx-rLC" id="NDo-RZ-v9R"/>
                                             </connections>
                                         </menuItem>
                                         <menuItem title="Find Previous" tag="3" keyEquivalent="G" id="OwM-mh-QMV">
                                             <connections>
-                                                <action selector="performFindPanelAction:" target="-1" id="HOh-sY-3ay"/>
+                                                <action selector="performFindPanelAction:" target="Voe-Tx-rLC" id="HOh-sY-3ay"/>
                                             </connections>
                                         </menuItem>
                                         <menuItem title="Use Selection for Find" tag="7" keyEquivalent="e" id="buJ-ug-pKt">
                                             <connections>
-                                                <action selector="performFindPanelAction:" target="-1" id="U76-nv-p5D"/>
+                                                <action selector="performFindPanelAction:" target="Voe-Tx-rLC" id="U76-nv-p5D"/>
                                             </connections>
                                         </menuItem>
                                         <menuItem title="Jump to Selection" keyEquivalent="j" id="S0p-oC-mLd">
@@ -669,7 +676,7 @@
                     <modifierMask key="keyEquivalentModifierMask"/>
                     <menu key="submenu" title="Help" systemMenu="help" id="F2S-fz-NVQ">
                         <items>
-                            <menuItem title="md-preview Help" keyEquivalent="?" id="FKE-Sm-Kum">
+                            <menuItem title="Markdown Preview Help" keyEquivalent="?" id="FKE-Sm-Kum">
                                 <connections>
                                     <action selector="showHelp:" target="-1" id="y7X-2Q-9no"/>
                                 </connections>
@@ -680,7 +687,7 @@
             </items>
             <point key="canvasLocation" x="200" y="121"/>
         </menu>
-        <window title="md-preview" allowsToolTipsWhenApplicationIsInactive="NO" autorecalculatesKeyViewLoop="NO" releasedWhenClosed="NO" animationBehavior="default" id="QvC-M9-y7g">
+        <window title="Markdown Preview" allowsToolTipsWhenApplicationIsInactive="NO" autorecalculatesKeyViewLoop="NO" releasedWhenClosed="NO" visibleAtLaunch="NO" animationBehavior="default" id="QvC-M9-y7g">
             <windowStyleMask key="styleMask" titled="YES" closable="YES" miniaturizable="YES" resizable="YES"/>
             <windowPositionMask key="initialPositionMask" leftStrut="YES" rightStrut="YES" topStrut="YES" bottomStrut="YES"/>
             <rect key="contentRect" x="335" y="390" width="480" height="360"/>
