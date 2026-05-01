@@ -8,7 +8,7 @@
   A fast, native macOS app for reading Markdown files.
 </p>
 
-<p align="center"><img alt="Platform" src="https://img.shields.io/badge/platform-macOS%2026.4%2B-blue" />&nbsp;<img alt="Swift" src="https://img.shields.io/badge/swift-6.0-orange" />&nbsp;<img alt="License" src="https://img.shields.io/github/license/pluk-inc/md-preview.app" />&nbsp;<img alt="Latest release" src="https://img.shields.io/github/v/release/pluk-inc/md-preview.app" /></p>
+<p align="center"><img alt="Platform" src="https://img.shields.io/badge/platform-macOS%2015%2B-blue" />&nbsp;<img alt="Swift" src="https://img.shields.io/badge/swift-6.0-orange" />&nbsp;<img alt="License" src="https://img.shields.io/github/license/pluk-inc/md-preview.app" />&nbsp;<img alt="Latest release" src="https://img.shields.io/github/v/release/pluk-inc/md-preview.app" /></p>
 
 ---
 
@@ -50,7 +50,7 @@ Grab the latest signed and notarized DMG from the [Releases](https://github.com/
 
 ## Requirements
 
-- macOS 26.4 or later
+- macOS 15 or later
 - Apple Silicon or Intel
 
 ## Building from source

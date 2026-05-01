@@ -10,7 +10,7 @@ A macOS app for previewing Markdown files. AppKit, sandboxed, ships with a Quick
 | Product name | `Markdown Preview` |
 | Scheme | `md-preview` |
 | Quick Look target | `quick-look` (embedded extension) |
-| Min macOS | 26.0 |
+| Min macOS | 15.0 |
 | Sandboxed | yes — uses Sparkle XPC services for updates |
 | Auto-updater | Sparkle 2.x (Swift package) |
 | Distribution | Amore (managed) with custom domain `storage.md-preview.app` |
