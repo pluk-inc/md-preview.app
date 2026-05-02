@@ -6,8 +6,10 @@
 //
 
 import Cocoa
-import Sparkle
 import UniformTypeIdentifiers
+#if !APPSTORE
+import Sparkle
+#endif
 
 extension NSToolbarItem.Identifier {
     static let openWith = NSToolbarItem.Identifier("OpenWith")
@@ -21,11 +23,13 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSToolbarDelegate, NSSharing
 
     @IBOutlet var window: NSWindow!
 
+    #if !APPSTORE
     private let updaterController = SPUStandardUpdaterController(
         startingUpdater: true,
         updaterDelegate: nil,
         userDriverDelegate: nil
     )
+    #endif
 
     private var pendingLaunchURL: URL?
     private var hasLaunched = false
@@ -59,6 +63,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSToolbarDelegate, NSSharing
         toolbar.displayMode = .iconOnly
         window.toolbar = toolbar
         window.toolbarStyle = .unified
+
+        #if APPSTORE
+        removeUpdaterMenuItem()
+        #endif
 
         hasLaunched = true
 
@@ -531,9 +539,22 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSToolbarDelegate, NSSharing
         ) { _, _ in }
     }
 
+    #if !APPSTORE
     @IBAction func checkForUpdates(_ sender: Any?) {
         updaterController.updater.checkForUpdates()
     }
+    #else
+    private func removeUpdaterMenuItem() {
+        guard let appMenu = NSApp.mainMenu?.item(at: 0)?.submenu else { return }
+        guard let idx = appMenu.items.firstIndex(where: {
+            $0.title.range(of: "Check for Updates", options: .caseInsensitive) != nil
+        }) else { return }
+        appMenu.removeItem(at: idx)
+        if idx > 0, appMenu.items[idx - 1].isSeparatorItem {
+            appMenu.removeItem(at: idx - 1)
+        }
+    }
+    #endif
 
     @IBAction func openDocument(_ sender: Any?) {
         guard window.isVisible else {

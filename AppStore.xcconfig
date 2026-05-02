@@ -1,0 +1,21 @@
+// Overlay xcconfig for Mac App Store builds.
+// Pass via:  xcodebuild -xcconfig AppStore.xcconfig ...
+// or via the helper:  ./scripts/archive-appstore.sh
+
+#include "Version.xcconfig"
+
+// Compile out Sparkle and its menu item.
+SWIFT_ACTIVE_COMPILATION_CONDITIONS = $(inherited) APPSTORE
+
+// Sparkle-free entitlements (no XPC mach-lookup temp exceptions).
+CODE_SIGN_ENTITLEMENTS = md-preview/md-preview-appstore.entitlements
+
+// Info.plist without SUFeedURL / SUPublicEDKey / SUEnableInstallerLauncherService.
+INFOPLIST_FILE = Info-AppStore.plist
+
+// Mac App Store distribution requires Apple Distribution + a MAS provisioning profile.
+// Keep automatic signing on, but switch the cert to the distribution one.
+CODE_SIGN_STYLE = Manual
+CODE_SIGN_IDENTITY = Apple Distribution
+// Set this to the name of your Mac App Store provisioning profile in App Store Connect:
+// PROVISIONING_PROFILE_SPECIFIER = Markdown Preview MAS

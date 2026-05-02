@@ -70,6 +70,22 @@ Default is **unpublish** (reversible — flips `published=false` on Amore so it 
 
 To inspect or change: `amore config show --bundle-id doc.md-preview` / `amore config set ...`. CLI lives at `/usr/local/bin/amore`.
 
+## Mac App Store builds
+
+The app supports a parallel App Store build that compiles Sparkle out and ships sandbox-clean entitlements:
+
+```bash
+./scripts/archive-appstore.sh                       # → build/AppStore.xcarchive
+./scripts/archive-appstore.sh path/out.xcarchive    # custom archive path
+```
+
+How the gate works:
+- `AppStore.xcconfig` overlays `Version.xcconfig` and sets `SWIFT_ACTIVE_COMPILATION_CONDITIONS = $(inherited) APPSTORE`, swaps `CODE_SIGN_ENTITLEMENTS` to `md-preview/md-preview-appstore.entitlements` (no Sparkle XPC mach-lookup), and swaps `INFOPLIST_FILE` to `Info-AppStore.plist` (no `SU*` keys).
+- `AppDelegate.swift` wraps `import Sparkle`, the `SPUStandardUpdaterController` property, and `checkForUpdates(_:)` in `#if !APPSTORE`. The "Check for Updates…" menu item is removed at launch when `APPSTORE` is defined.
+- The script strips the embedded `Sparkle.framework` from the archive after `xcodebuild archive` and re-signs the app — SwiftPM embeds the framework even when no code references it. Override the resign identity with `APPSTORE_SIGN_IDENTITY=...` if "Apple Distribution" is ambiguous.
+
+Before first submission: set `PROVISIONING_PROFILE_SPECIFIER` in `AppStore.xcconfig` to your MAS provisioning profile name. The Direct Distribution pipeline (`scripts/release.sh` → Amore + Sparkle) is unaffected.
+
 ## Known issues
 
 - **`SUFeedURL` mismatch**. Info.plist points to `https://storage.md-preview.app/appcast.xml` but Amore actually publishes to `https://storage.md-preview.app/v1/apps/doc.md-preview/appcast.xml`. Fix Info.plist before any non-test release ships to real users — already-installed copies will check the wrong URL forever. Either change `SUFeedURL` to the `/v1/apps/...` path, or configure a CDN rewrite at `storage.md-preview.app` to map `/appcast.xml` → the real path.
