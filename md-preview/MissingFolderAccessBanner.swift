@@ -118,6 +118,13 @@ final class MissingFolderAccessBanner: NSView {
         layer?.backgroundColor = NSColor.windowBackgroundColor.cgColor
     }
 
+    // Advertise a fixed height so NSTitlebarAccessoryViewController doesn't
+    // size us to NSTextField's intrinsic height (which under-reports on
+    // macOS 15 and clips descenders in the message label).
+    override var intrinsicContentSize: NSSize {
+        NSSize(width: NSView.noIntrinsicMetric, height: 44)
+    }
+
     @objc private func allowTapped() {
         onAllow?()
     }

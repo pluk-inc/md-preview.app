@@ -593,7 +593,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSToolbarDelegate, NSSharing
 
     private func installAccessBanner() {
         let banner = MissingFolderAccessBanner(
-            frame: NSRect(x: 0, y: 0, width: 600, height: 40))
+            frame: NSRect(x: 0, y: 0, width: 600, height: 44))
         banner.autoresizingMask = [.width]
         banner.onAllow = { [weak self] in self?.grantAccessForCurrentDocument() }
         banner.onDismiss = { [weak self] in self?.dismissBannerForCurrentDocument() }
