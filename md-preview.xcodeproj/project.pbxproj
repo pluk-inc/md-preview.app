@@ -7,11 +7,11 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
-		9A0207D32FA0ED7D00092060 /* Ink in Frameworks */ = {isa = PBXBuildFile; productRef = 9A0207D42FA0ED7D00092060 /* Ink */; };
 		9A0209302FA10D4C00092060 /* Quartz.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 9A02092F2FA10D4C00092060 /* Quartz.framework */; };
 		9A02093C2FA10D4C00092060 /* quick-look.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 9A02092D2FA10D4C00092060 /* quick-look.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
-		9A02095A2FA1100000092060 /* Ink in Frameworks */ = {isa = PBXBuildFile; productRef = 9A02095B2FA1100000092060 /* Ink */; };
 		9A0209C12FA1100200092060 /* Sparkle in Frameworks */ = {isa = PBXBuildFile; productRef = 9A0209C22FA1100200092060 /* Sparkle */; };
+		9A33940A2FA5AF500015D9A4 /* Markdown in Frameworks */ = {isa = PBXBuildFile; productRef = 9A3394092FA5AF500015D9A4 /* Markdown */; };
+		9A33940C2FA5AF500015D9A4 /* Markdown in Frameworks */ = {isa = PBXBuildFile; productRef = 9A33940B2FA5AF500015D9A4 /* Markdown */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -87,8 +87,8 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				9A0207D32FA0ED7D00092060 /* Ink in Frameworks */,
 				9A0209C12FA1100200092060 /* Sparkle in Frameworks */,
+				9A33940A2FA5AF500015D9A4 /* Markdown in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -97,7 +97,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				9A0209302FA10D4C00092060 /* Quartz.framework in Frameworks */,
-				9A02095A2FA1100000092060 /* Ink in Frameworks */,
+				9A33940C2FA5AF500015D9A4 /* Markdown in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -154,8 +154,8 @@
 			);
 			name = "md-preview";
 			packageProductDependencies = (
-				9A0207D42FA0ED7D00092060 /* Ink */,
 				9A0209C22FA1100200092060 /* Sparkle */,
+				9A3394092FA5AF500015D9A4 /* Markdown */,
 			);
 			productName = "md-preview";
 			productReference = 9A0207C12FA0ED7C00092060 /* Markdown Preview.app */;
@@ -178,7 +178,7 @@
 			);
 			name = "quick-look";
 			packageProductDependencies = (
-				9A02095B2FA1100000092060 /* Ink */,
+				9A33940B2FA5AF500015D9A4 /* Markdown */,
 			);
 			productName = "quick-look";
 			productReference = 9A02092D2FA10D4C00092060 /* quick-look.appex */;
@@ -212,8 +212,8 @@
 			mainGroup = 9A0207B82FA0ED7C00092060;
 			minimizedProjectReferenceProxies = 1;
 			packageReferences = (
-				9A0207D52FA0ED7D00092060 /* XCRemoteSwiftPackageReference "Ink" */,
 				9A0209C32FA1100200092060 /* XCRemoteSwiftPackageReference "Sparkle" */,
+				9A3394082FA5AF500015D9A4 /* XCRemoteSwiftPackageReference "swift-markdown" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 9A0207C22FA0ED7C00092060 /* Products */;
@@ -552,14 +552,6 @@
 /* End XCConfigurationList section */
 
 /* Begin XCRemoteSwiftPackageReference section */
-		9A0207D52FA0ED7D00092060 /* XCRemoteSwiftPackageReference "Ink" */ = {
-			isa = XCRemoteSwiftPackageReference;
-			repositoryURL = "https://github.com/JohnSundell/Ink";
-			requirement = {
-				kind = upToNextMajorVersion;
-				minimumVersion = 0.6.0;
-			};
-		};
 		9A0209C32FA1100200092060 /* XCRemoteSwiftPackageReference "Sparkle" */ = {
 			isa = XCRemoteSwiftPackageReference;
 			repositoryURL = "https://github.com/sparkle-project/Sparkle";
@@ -568,23 +560,31 @@
 				minimumVersion = 2.0.0;
 			};
 		};
+		9A3394082FA5AF500015D9A4 /* XCRemoteSwiftPackageReference "swift-markdown" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/swiftlang/swift-markdown.git";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 0.7.3;
+			};
+		};
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
-		9A0207D42FA0ED7D00092060 /* Ink */ = {
-			isa = XCSwiftPackageProductDependency;
-			package = 9A0207D52FA0ED7D00092060 /* XCRemoteSwiftPackageReference "Ink" */;
-			productName = Ink;
-		};
-		9A02095B2FA1100000092060 /* Ink */ = {
-			isa = XCSwiftPackageProductDependency;
-			package = 9A0207D52FA0ED7D00092060 /* XCRemoteSwiftPackageReference "Ink" */;
-			productName = Ink;
-		};
 		9A0209C22FA1100200092060 /* Sparkle */ = {
 			isa = XCSwiftPackageProductDependency;
 			package = 9A0209C32FA1100200092060 /* XCRemoteSwiftPackageReference "Sparkle" */;
 			productName = Sparkle;
+		};
+		9A3394092FA5AF500015D9A4 /* Markdown */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 9A3394082FA5AF500015D9A4 /* XCRemoteSwiftPackageReference "swift-markdown" */;
+			productName = Markdown;
+		};
+		9A33940B2FA5AF500015D9A4 /* Markdown */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 9A3394082FA5AF500015D9A4 /* XCRemoteSwiftPackageReference "swift-markdown" */;
+			productName = Markdown;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};
