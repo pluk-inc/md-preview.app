@@ -316,6 +316,13 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSToolbarDelegate, NSSharing
     // MARK: - Open With
 
     private static let markdownFileExtensions = ["md", "markdown", "mdown", "txt"]
+    private static let markdownDocTypeExtensions: Set<String> = ["md", "markdown", "mdown"]
+    private static let strongMarkdownUTIs: Set<String> = ["net.daringfireball.markdown"]
+    private static let plainTextUTIs: Set<String> = [
+        "public.plain-text", "public.text",
+        "public.utf8-plain-text", "public.utf16-plain-text"
+    ]
+    private static let textyUTIs: Set<String> = plainTextUTIs.union(strongMarkdownUTIs)
     private static let defaultEditorBundleIDKey = "MarkdownPreview.defaultEditorBundleID"
     private static let editorBundleIDPriority = [
         "com.microsoft.VSCode",
@@ -392,7 +399,6 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSToolbarDelegate, NSSharing
             let plist = infoPlist(at: appURL)
             let bundleID = (plist?["CFBundleIdentifier"] as? String)
                 ?? Bundle(url: appURL)?.bundleIdentifier
-            if let bundleID, bundleID == myBundleID { return nil }
             guard canEditMarkdown(plist: plist) else { return nil }
             return EditorCandidate(url: appURL, bundleID: bundleID)
         }
@@ -470,11 +476,6 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSToolbarDelegate, NSSharing
             return true
         }
 
-        let strongMarkdownUTIs: Set<String> = ["net.daringfireball.markdown"]
-        let plainTextUTIs: Set<String> = ["public.plain-text", "public.text",
-                                          "public.utf8-plain-text", "public.utf16-plain-text"]
-        let markdownExtensions: Set<String> = ["md", "markdown", "mdown"]
-
         var matchedAsEditor = false
         var matchedAsViewer = false
 
@@ -484,15 +485,13 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSToolbarDelegate, NSSharing
                 .map { $0.lowercased() })
             let rank = (docType["LSHandlerRank"] as? String) ?? "Default"
 
-            let hasMarkdownUTI = !strongMarkdownUTIs.isDisjoint(with: utis)
-            let hasMarkdownExtension = !markdownExtensions.isDisjoint(with: extensions)
+            let hasMarkdownUTI = !Self.strongMarkdownUTIs.isDisjoint(with: utis)
+            let hasMarkdownExtension = !Self.markdownDocTypeExtensions.isDisjoint(with: extensions)
             // A generic plain-text claim only counts as "real text editor" when the entry's UTI
             // list is purely text-flavored and isn't ranked Alternate. That filters Postico
             // (Alternate) and Numbers (bundles public.plain-text with CSV/TSV import UTIs).
-            let isPureTextEntry = !utis.isEmpty && utis.isSubset(of: plainTextUTIs.union(strongMarkdownUTIs))
-            let isPlainTextEditor = !plainTextUTIs.isDisjoint(with: utis)
-                && rank != "Alternate"
-                && isPureTextEntry
+            let isPureTextEntry = !utis.isEmpty && utis.isSubset(of: Self.textyUTIs)
+            let isPlainTextEditor = isPureTextEntry && rank != "Alternate"
 
             guard hasMarkdownUTI || hasMarkdownExtension || isPlainTextEditor else { continue }
 
