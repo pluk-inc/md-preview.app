@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.0.3] – 2026-05-02
+
+Better Markdown rendering and a tidier **Open With** menu.
+
+- **Switched the Markdown engine to swift-markdown (cmark-gfm).** Rendering is now CommonMark- and GitHub-Flavored-Markdown-compliant, so tables, task lists, strikethrough, and autolinks render the way you'd expect on GitHub.
+- **Fixed the Open With list.** No more duplicate Markdown Preview entries from old build copies, and unrelated apps that only claim a generic plain-text association no longer show up — only apps that actually edit Markdown are listed.
+
 ## [0.0.2] – 2026-05-01
 
 Compatibility release: Markdown Preview now runs on macOS 15 Sequoia in addition to macOS 26 Tahoe.
