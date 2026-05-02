@@ -37,6 +37,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSToolbarDelegate, NSSharing
     private weak var inspectorItem: NSToolbarItem?
     private weak var inspectorButton: NSButton?
     private weak var searchField: NSSearchField?
+    private var accessBanner: MissingFolderAccessBanner?
+    private var accessBannerAccessory: NSTitlebarAccessoryViewController?
 
     func application(_ application: NSApplication, open urls: [URL]) {
         guard let url = urls.first else { return }
@@ -59,6 +61,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSToolbarDelegate, NSSharing
         toolbar.displayMode = .iconOnly
         window.toolbar = toolbar
         window.toolbarStyle = .unified
+
+        installAccessBanner()
 
         hasLaunched = true
 
@@ -566,8 +570,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSToolbarDelegate, NSSharing
                 switch result {
                 case .success(let text):
                     self.currentMarkdown = text
-                    (self.window.contentViewController as? MainSplitViewController)?
-                        .display(markdown: text, fileName: url.lastPathComponent, url: url)
+                    self.renderCurrentDocument(text: text, fileURL: url)
                 case .failure(let error):
                     if !silentOnFailure {
                         NSAlert(error: error).beginSheetModal(for: self.window)
@@ -575,6 +578,64 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSToolbarDelegate, NSSharing
                 }
             }
         }
+    }
+
+    private func renderCurrentDocument(text: String, fileURL: URL) {
+        let assetBase = SandboxAccessManager.shared.currentAccessURL(forParentOf: fileURL)
+
+        let needsBanner = assetBase == nil
+            && MarkdownAssetScanner.hasRelativeLocalRefs(text)
+            && !SandboxAccessManager.shared.hasDeclined(forParentOf: fileURL)
+        updateAccessBanner(visible: needsBanner,
+                           folderName: fileURL.deletingLastPathComponent().lastPathComponent)
+
+        (window.contentViewController as? MainSplitViewController)?
+            .display(markdown: text,
+                     fileName: fileURL.lastPathComponent,
+                     url: fileURL,
+                     assetBaseURL: assetBase)
+    }
+
+    private func installAccessBanner() {
+        let banner = MissingFolderAccessBanner()
+        banner.translatesAutoresizingMaskIntoConstraints = false
+        banner.onAllow = { [weak self] in self?.grantAccessForCurrentDocument() }
+        banner.onDismiss = { [weak self] in self?.dismissBannerForCurrentDocument() }
+        banner.heightAnchor.constraint(greaterThanOrEqualToConstant: 38).isActive = true
+
+        let accessory = NSTitlebarAccessoryViewController()
+        accessory.layoutAttribute = .bottom
+        accessory.view = banner
+        accessory.isHidden = true
+        window.addTitlebarAccessoryViewController(accessory)
+
+        self.accessBanner = banner
+        self.accessBannerAccessory = accessory
+    }
+
+    private func updateAccessBanner(visible: Bool, folderName: String) {
+        guard let accessory = accessBannerAccessory, let banner = accessBanner else { return }
+        if visible {
+            banner.update(folderName: folderName)
+        }
+        if accessory.isHidden == visible {
+            accessory.isHidden = !visible
+        }
+    }
+
+    private func grantAccessForCurrentDocument() {
+        guard let url = currentFileURL, let text = currentMarkdown else { return }
+        guard SandboxAccessManager.shared.requestAccess(forParentOf: url) != nil else {
+            // User cancelled the panel — leave the banner up so they can retry.
+            return
+        }
+        renderCurrentDocument(text: text, fileURL: url)
+    }
+
+    private func dismissBannerForCurrentDocument() {
+        guard let url = currentFileURL, let text = currentMarkdown else { return }
+        SandboxAccessManager.shared.markDeclined(forParentOf: url)
+        renderCurrentDocument(text: text, fileURL: url)
     }
 }
 

@@ -10,11 +10,14 @@ final class MarkdownWebView: NSView, WKNavigationDelegate {
 
     let webView: WKWebView
     var heightDidChange: ((CGFloat) -> Void)?
+    private let assetScheme = MarkdownAssetScheme()
+    private var currentAssetBase: URL?
     private var scheduledHeightUpdates: [DispatchWorkItem] = []
     private var lastMeasuredWidth: CGFloat = 0
 
     override init(frame frameRect: NSRect) {
         let config = WKWebViewConfiguration()
+        config.setURLSchemeHandler(assetScheme, forURLScheme: MarkdownAssetScheme.scheme)
         webView = NonScrollingWKWebView(frame: .zero, configuration: config)
         super.init(frame: frameRect)
 
@@ -48,8 +51,12 @@ final class MarkdownWebView: NSView, WKNavigationDelegate {
         neutralizeWebKitScrollEdgeInsets()
     }
 
-    func display(markdown: String) {
-        webView.loadHTMLString(MarkdownHTML.makeHTML(from: markdown), baseURL: nil)
+    func display(markdown: String, assetBaseURL: URL? = nil) {
+        assetScheme.setBaseURL(assetBaseURL)
+        let baseHref = assetBaseURL == nil ? nil : "\(MarkdownAssetScheme.scheme):///"
+        let html = MarkdownHTML.makeHTML(from: markdown, assetBaseHref: baseHref)
+        webView.loadHTMLString(html, baseURL: nil)
+        currentAssetBase = assetBaseURL
     }
 
     func recalculateDocumentHeight() {
@@ -249,7 +256,13 @@ final class MarkdownWebView: NSView, WKNavigationDelegate {
                  decidePolicyFor navigationAction: WKNavigationAction,
                  decisionHandler: @escaping @MainActor @Sendable (WKNavigationActionPolicy) -> Void) {
         if navigationAction.navigationType == .linkActivated, let url = navigationAction.request.url {
-            NSWorkspace.shared.open(url)
+            if url.scheme == MarkdownAssetScheme.scheme,
+               let base = currentAssetBase,
+               let resolved = MarkdownAssetScheme.resolve(url, against: base) {
+                NSWorkspace.shared.open(resolved)
+            } else if url.scheme != MarkdownAssetScheme.scheme {
+                NSWorkspace.shared.open(url)
+            }
             decisionHandler(.cancel)
             return
         }
