@@ -360,13 +360,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSToolbarDelegate, NSSharing
     private func refreshOpenWithItem() {
         let candidates = currentFileURL.map { editorCandidates(for: $0) } ?? []
         let resolvedDefault = resolveDefaultEditor(among: candidates)
-        openWithItem?.label = resolvedDefault.map {
-            "Open in \(displayName(for: $0.url))"
-        } ?? "Open With"
+        let openInTitle = resolvedDefault.map { "Open in \(displayName(for: $0.url))" }
+        openWithItem?.label = openInTitle ?? "Open With"
         openWithItem?.image = openWithImage(for: resolvedDefault?.url)
-        openWithItem?.toolTip = resolvedDefault.map {
-            "Open in \(displayName(for: $0.url))"
-        } ?? "Open in another editor"
+        openWithItem?.toolTip = openInTitle ?? "Open in another editor"
         openWithItem?.menu = buildOpenWithMenu(candidates: candidates,
                                                defaultEditor: resolvedDefault)
     }
@@ -393,15 +390,15 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSToolbarDelegate, NSSharing
         let myBundleID = Bundle.main.bundleIdentifier
         // Every URL Launch Services has registered for our bundle id — covers stale DerivedData /
         // archive copies the sandbox can't introspect by reading their Info.plist.
-        var selfURLs: Set<URL> = [Bundle.main.bundleURL.resolvingSymlinksInPath().standardizedFileURL]
+        var selfURLs: Set<URL> = [canonicalAppURL(Bundle.main.bundleURL)]
         if let myBundleID {
             for url in NSWorkspace.shared.urlsForApplications(withBundleIdentifier: myBundleID) {
-                selfURLs.insert(url.resolvingSymlinksInPath().standardizedFileURL)
+                selfURLs.insert(canonicalAppURL(url))
             }
         }
 
         return NSWorkspace.shared.urlsForApplications(toOpen: fileURL).compactMap { appURL in
-            if selfURLs.contains(appURL.resolvingSymlinksInPath().standardizedFileURL) { return nil }
+            if selfURLs.contains(canonicalAppURL(appURL)) { return nil }
             let plist = infoPlist(at: appURL)
             let bundleID = (plist?["CFBundleIdentifier"] as? String)
                 ?? Bundle(url: appURL)?.bundleIdentifier
@@ -423,15 +420,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSToolbarDelegate, NSSharing
         }
 
         if let persistedPath = UserDefaults.standard.string(forKey: Self.defaultEditorURLKey) {
-            let persistedURL = URL(fileURLWithPath: persistedPath)
-                .resolvingSymlinksInPath()
-                .standardizedFileURL
+            let persistedURL = canonicalAppURL(URL(fileURLWithPath: persistedPath))
             if let match = candidates.first(where: { sameApplication($0.url, persistedURL) }) {
                 return match
-            }
-            if FileManager.default.fileExists(atPath: persistedURL.path) {
-                return EditorCandidate(url: persistedURL,
-                                       bundleID: Bundle(url: persistedURL)?.bundleIdentifier)
             }
         }
 
@@ -493,8 +484,11 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSToolbarDelegate, NSSharing
     }
 
     private func sameApplication(_ lhs: URL, _ rhs: URL) -> Bool {
-        lhs.resolvingSymlinksInPath().standardizedFileURL
-            == rhs.resolvingSymlinksInPath().standardizedFileURL
+        canonicalAppURL(lhs) == canonicalAppURL(rhs)
+    }
+
+    private func canonicalAppURL(_ url: URL) -> URL {
+        url.resolvingSymlinksInPath().standardizedFileURL
     }
 
     private func infoPlist(at appURL: URL) -> [String: Any]? {
