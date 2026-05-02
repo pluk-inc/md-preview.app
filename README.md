@@ -98,7 +98,7 @@ Pull requests are welcome. For larger changes, please open an issue first to dis
 
 - [swift-markdown](https://github.com/swiftlang/swift-markdown) — Markdown parser (Apple, cmark-gfm-backed)
 - [Sparkle](https://sparkle-project.org) — Auto-update framework
-- [Amore](http://amore.computer/) — macOS release automation (signing, notarization, DMG, S3 hosting, appcast)
+- [Amore](http://amore.computer/) — macOS release automation (signing, notarization, DMG, hosting, appcast)
 
 ## License
 
