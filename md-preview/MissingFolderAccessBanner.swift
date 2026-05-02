@@ -9,12 +9,12 @@ import Cocoa
 /// access to the document's parent folder.
 final class MissingFolderAccessBanner: NSView {
 
+    static let preferredHeight: CGFloat = 52
+
     var onAllow: (() -> Void)?
-    var onDismiss: (() -> Void)?
 
     private let messageLabel = NSTextField(labelWithString: "")
     private let allowButton = NSButton(title: "Allow Access", target: nil, action: nil)
-    private let dismissButton = NSButton()
     private let topSeparator = NSBox()
     private let bottomSeparator = NSBox()
 
@@ -56,19 +56,7 @@ final class MissingFolderAccessBanner: NSView {
         allowButton.keyEquivalent = "\r"
         allowButton.translatesAutoresizingMaskIntoConstraints = false
 
-        dismissButton.bezelStyle = .accessoryBar
-        dismissButton.isBordered = false
-        dismissButton.image = NSImage(systemSymbolName: "xmark",
-                                      accessibilityDescription: "Dismiss")
-        dismissButton.imagePosition = .imageOnly
-        dismissButton.imageScaling = .scaleProportionallyDown
-        dismissButton.contentTintColor = .secondaryLabelColor
-        dismissButton.target = self
-        dismissButton.action = #selector(dismissTapped)
-        dismissButton.toolTip = "Dismiss"
-        dismissButton.translatesAutoresizingMaskIntoConstraints = false
-
-        let stack = NSStackView(views: [icon, messageLabel, allowButton, dismissButton])
+        let stack = NSStackView(views: [icon, messageLabel, allowButton])
         stack.orientation = .horizontal
         stack.spacing = 10
         stack.alignment = .centerY
@@ -101,16 +89,13 @@ final class MissingFolderAccessBanner: NSView {
 
             stack.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 16),
             stack.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -10),
-            stack.topAnchor.constraint(equalTo: topSeparator.bottomAnchor, constant: 8),
-            stack.bottomAnchor.constraint(equalTo: bottomSeparator.topAnchor, constant: -8),
+            stack.topAnchor.constraint(equalTo: topSeparator.bottomAnchor, constant: 6),
+            stack.bottomAnchor.constraint(equalTo: bottomSeparator.topAnchor, constant: -6),
 
             bottomSeparator.leadingAnchor.constraint(equalTo: leadingAnchor),
             bottomSeparator.trailingAnchor.constraint(equalTo: trailingAnchor),
             bottomSeparator.bottomAnchor.constraint(equalTo: bottomAnchor),
-            bottomSeparator.heightAnchor.constraint(equalToConstant: 1),
-
-            dismissButton.widthAnchor.constraint(equalToConstant: 22),
-            dismissButton.heightAnchor.constraint(equalToConstant: 22)
+            bottomSeparator.heightAnchor.constraint(equalToConstant: 1)
         ])
     }
 
@@ -120,16 +105,14 @@ final class MissingFolderAccessBanner: NSView {
 
     // Advertise a fixed height so NSTitlebarAccessoryViewController doesn't
     // size us to NSTextField's intrinsic height (which under-reports on
-    // macOS 15 and clips descenders in the message label).
+    // macOS 15 and clips the message label). Keep this tall enough for the
+    // regular rounded button plus vertical padding; otherwise the stack view
+    // compresses its arranged subviews and AppKit can shave the label.
     override var intrinsicContentSize: NSSize {
-        NSSize(width: NSView.noIntrinsicMetric, height: 44)
+        NSSize(width: NSView.noIntrinsicMetric, height: Self.preferredHeight)
     }
 
     @objc private func allowTapped() {
         onAllow?()
-    }
-
-    @objc private func dismissTapped() {
-        onDismiss?()
     }
 }

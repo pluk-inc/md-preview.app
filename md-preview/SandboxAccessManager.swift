@@ -12,7 +12,6 @@ final class SandboxAccessManager {
     static let shared = SandboxAccessManager()
 
     private static let bookmarkKeyPrefix = "MarkdownPreview.folderBookmark."
-    private static let declinedKeyPrefix = "MarkdownPreview.folderDeclined."
 
     private var activeAccess: [URL: URL] = [:]
 
@@ -27,17 +26,6 @@ final class SandboxAccessManager {
         return restoreAccess(for: parent)
     }
 
-    func hasDeclined(forParentOf fileURL: URL) -> Bool {
-        let parent = fileURL.deletingLastPathComponent()
-        return UserDefaults.standard.bool(forKey: Self.declinedKey(for: parent))
-    }
-
-    func markDeclined(forParentOf fileURL: URL) {
-        let parent = fileURL.deletingLastPathComponent()
-        UserDefaults.standard.set(true, forKey: Self.declinedKey(for: parent))
-        UserDefaults.standard.removeObject(forKey: Self.bookmarkKey(for: parent))
-    }
-
     /// Prompt the user (Powerbox) for access to the parent folder. Returns the
     /// granted URL or `nil` if the user cancelled.
     @discardableResult
@@ -46,7 +34,6 @@ final class SandboxAccessManager {
         if let active = activeContaining(parent) { return active }
         if let restored = restoreAccess(for: parent) { return restored }
         guard let granted = promptForAccess(to: parent) else { return nil }
-        UserDefaults.standard.removeObject(forKey: Self.declinedKey(for: parent))
         return granted
     }
 
@@ -125,9 +112,5 @@ final class SandboxAccessManager {
 
     private static func bookmarkKey(for folderURL: URL) -> String {
         bookmarkKeyPrefix + folderURL.standardizedFileURL.path
-    }
-
-    private static func declinedKey(for folderURL: URL) -> String {
-        declinedKeyPrefix + folderURL.standardizedFileURL.path
     }
 }

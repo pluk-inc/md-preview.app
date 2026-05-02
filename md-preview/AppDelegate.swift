@@ -323,6 +323,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSToolbarDelegate, NSSharing
     ]
     private static let textyUTIs: Set<String> = plainTextUTIs.union(strongMarkdownUTIs)
     private static let defaultEditorBundleIDKey = "MarkdownPreview.defaultEditorBundleID"
+    private static let defaultEditorURLKey = "MarkdownPreview.defaultEditorURL"
     private static let editorBundleIDPriority = [
         "com.microsoft.VSCode",
         "com.todesktop.230313mzl4w4u92",
@@ -359,9 +360,15 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSToolbarDelegate, NSSharing
     private func refreshOpenWithItem() {
         let candidates = currentFileURL.map { editorCandidates(for: $0) } ?? []
         let resolvedDefault = resolveDefaultEditor(among: candidates)
+        openWithItem?.label = resolvedDefault.map {
+            "Open in \(displayName(for: $0.url))"
+        } ?? "Open With"
         openWithItem?.image = openWithImage(for: resolvedDefault?.url)
+        openWithItem?.toolTip = resolvedDefault.map {
+            "Open in \(displayName(for: $0.url))"
+        } ?? "Open in another editor"
         openWithItem?.menu = buildOpenWithMenu(candidates: candidates,
-                                               defaultBundleID: resolvedDefault?.bundleID)
+                                               defaultEditor: resolvedDefault)
     }
 
     private func openWithImage(for url: URL?) -> NSImage {
@@ -414,6 +421,20 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSToolbarDelegate, NSSharing
                 return EditorCandidate(url: url, bundleID: persistedID)
             }
         }
+
+        if let persistedPath = UserDefaults.standard.string(forKey: Self.defaultEditorURLKey) {
+            let persistedURL = URL(fileURLWithPath: persistedPath)
+                .resolvingSymlinksInPath()
+                .standardizedFileURL
+            if let match = candidates.first(where: { sameApplication($0.url, persistedURL) }) {
+                return match
+            }
+            if FileManager.default.fileExists(atPath: persistedURL.path) {
+                return EditorCandidate(url: persistedURL,
+                                       bundleID: Bundle(url: persistedURL)?.bundleIdentifier)
+            }
+        }
+
         for preferred in Self.editorBundleIDPriority {
             if let match = candidates.first(where: { $0.bundleID == preferred }) {
                 return match
@@ -423,7 +444,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSToolbarDelegate, NSSharing
     }
 
     private func buildOpenWithMenu(candidates: [EditorCandidate],
-                                   defaultBundleID: String?) -> NSMenu {
+                                   defaultEditor: EditorCandidate?) -> NSMenu {
         let menu = NSMenu()
 
         guard currentFileURL != nil else {
@@ -442,7 +463,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSToolbarDelegate, NSSharing
 
         for candidate in candidates {
             let item = NSMenuItem(
-                title: candidate.url.deletingPathExtension().lastPathComponent,
+                title: displayName(for: candidate.url),
                 action: #selector(pickEditor(_:)),
                 keyEquivalent: ""
             )
@@ -451,12 +472,29 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSToolbarDelegate, NSSharing
             item.image = icon
             item.target = self
             item.representedObject = candidate
-            if let bundleID = candidate.bundleID, bundleID == defaultBundleID {
+            if let defaultEditor, sameEditor(candidate, defaultEditor) {
                 item.state = .on
             }
             menu.addItem(item)
         }
         return menu
+    }
+
+    private func displayName(for appURL: URL) -> String {
+        FileManager.default.displayName(atPath: appURL.path)
+            .replacingOccurrences(of: ".app", with: "")
+    }
+
+    private func sameEditor(_ lhs: EditorCandidate, _ rhs: EditorCandidate) -> Bool {
+        if let leftID = lhs.bundleID, let rightID = rhs.bundleID {
+            return leftID == rightID
+        }
+        return sameApplication(lhs.url, rhs.url)
+    }
+
+    private func sameApplication(_ lhs: URL, _ rhs: URL) -> Bool {
+        lhs.resolvingSymlinksInPath().standardizedFileURL
+            == rhs.resolvingSymlinksInPath().standardizedFileURL
     }
 
     private func infoPlist(at appURL: URL) -> [String: Any]? {
@@ -517,8 +555,11 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSToolbarDelegate, NSSharing
               let fileURL = currentFileURL else { return }
         if let bundleID = candidate.bundleID {
             UserDefaults.standard.set(bundleID, forKey: Self.defaultEditorBundleIDKey)
-            refreshOpenWithItem()
+        } else {
+            UserDefaults.standard.removeObject(forKey: Self.defaultEditorBundleIDKey)
         }
+        UserDefaults.standard.set(candidate.url.path, forKey: Self.defaultEditorURLKey)
+        refreshOpenWithItem()
         launch(fileURL, with: candidate.url)
     }
 
@@ -580,7 +621,6 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSToolbarDelegate, NSSharing
 
         let needsBanner = assetBase == nil
             && MarkdownAssetScanner.hasRelativeLocalRefs(text)
-            && !SandboxAccessManager.shared.hasDeclined(forParentOf: fileURL)
         updateAccessBanner(visible: needsBanner,
                            folderName: fileURL.deletingLastPathComponent().lastPathComponent)
 
@@ -593,10 +633,12 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSToolbarDelegate, NSSharing
 
     private func installAccessBanner() {
         let banner = MissingFolderAccessBanner(
-            frame: NSRect(x: 0, y: 0, width: 600, height: 44))
+            frame: NSRect(x: 0,
+                          y: 0,
+                          width: 600,
+                          height: MissingFolderAccessBanner.preferredHeight))
         banner.autoresizingMask = [.width]
         banner.onAllow = { [weak self] in self?.grantAccessForCurrentDocument() }
-        banner.onDismiss = { [weak self] in self?.dismissBannerForCurrentDocument() }
 
         let accessory = NSTitlebarAccessoryViewController()
         accessory.layoutAttribute = .bottom
@@ -624,12 +666,6 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSToolbarDelegate, NSSharing
             // User cancelled the panel — leave the banner up so they can retry.
             return
         }
-        renderCurrentDocument(text: text, fileURL: url)
-    }
-
-    private func dismissBannerForCurrentDocument() {
-        guard let url = currentFileURL, let text = currentMarkdown else { return }
-        SandboxAccessManager.shared.markDeclined(forParentOf: url)
         renderCurrentDocument(text: text, fileURL: url)
     }
 }
