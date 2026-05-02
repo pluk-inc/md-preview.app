@@ -4,12 +4,11 @@
 //
 
 import Foundation
-import Ink
+import Markdown
 
 enum MarkdownHTML {
     static func makeHTML(from markdown: String, allowsScroll: Bool = false) -> String {
-        let parser = MarkdownParser()
-        let body = injectHeadingIDs(in: parser.html(from: markdown))
+        let body = injectHeadingIDs(in: HTMLFormatter.format(markdown))
         let scrollOverride = allowsScroll ? """
         <style>
         html, body { overflow: auto !important; }

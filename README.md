@@ -30,7 +30,7 @@
 
 ## Features
 
-- **Native rendering** — `WKWebView` pipeline backed by [Ink](https://github.com/JohnSundell/Ink), with heading anchors and link handling.
+- **Native rendering** — `WKWebView` pipeline backed by [swift-markdown](https://github.com/swiftlang/swift-markdown), with heading anchors and link handling.
 - **Document outline** — sidebar TOC that mirrors your headings; click to jump.
 - **Inspector panel** — toggleable side panel with file metadata.
 - **In-document search** — toolbar search field plus standard <kbd>⌘F</kbd> / <kbd>⌘G</kbd> / <kbd>⌘⇧G</kbd> for next/previous match.
@@ -61,7 +61,7 @@ cd md-preview.app
 open md-preview.xcodeproj
 ```
 
-Build and run the `md-preview` scheme. Swift Package Manager will resolve [Sparkle](https://github.com/sparkle-project/Sparkle) and [Ink](https://github.com/JohnSundell/Ink) on first build.
+Build and run the `md-preview` scheme. Swift Package Manager will resolve [Sparkle](https://github.com/sparkle-project/Sparkle) and [swift-markdown](https://github.com/swiftlang/swift-markdown) on first build.
 
 ## Project layout
 
@@ -96,9 +96,9 @@ Pull requests are welcome. For larger changes, please open an issue first to dis
 
 ## Acknowledgments
 
-- [Ink](https://github.com/JohnSundell/Ink) — Markdown parser
+- [swift-markdown](https://github.com/swiftlang/swift-markdown) — Markdown parser (Apple, cmark-gfm-backed)
 - [Sparkle](https://sparkle-project.org) — Auto-update framework
-- [Amore](http://amore.computer/) — macOS release automation (signing, notarization, DMG, S3 hosting, appcast)
+- [Amore](http://amore.computer/) — macOS release automation (signing, notarization, DMG, hosting, appcast)
 
 ## License
 
