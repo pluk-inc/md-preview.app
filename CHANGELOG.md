@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.0.9] – 2026-05-03
+
+Mermaid diagram rendering in the app and Quick Look.
+
+- **Fenced `mermaid` code blocks now render as diagrams.** The Markdown pipeline detects `mermaid` fences, swaps them for diagram containers, and runs the Mermaid renderer on load — flowcharts, sequence diagrams, class diagrams, and the rest show up inline instead of as raw code.
+- **Renderer is bundled, so previews work offline.** The Mermaid script ships inside the app bundle and is shared with the Quick Look extension; no CDN request is made when opening a document.
+- **Diagrams follow the system appearance.** Mermaid initializes with the dark theme when the system is in dark mode and the default theme otherwise, and uses the SF system font so labels match the surrounding text.
+
 ## [0.0.8] – 2026-05-03
 
 Tabbed Inspector with native segmented picker.
