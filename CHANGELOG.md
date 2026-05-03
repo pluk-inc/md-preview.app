@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.0.7] – 2026-05-03
+
+YAML frontmatter rendering fix and Inspector metadata.
+
+- **YAML frontmatter no longer collapses into a giant heading.** The CommonMark renderer was treating the closing `---` of a frontmatter block as a setext heading underline, turning `title:` / `date:` / `tags:` into one oversized H2 at the top of the document. The block is now stripped before parsing and the preview matches what GitHub, Obsidian, and VS Code show.
+- **Frontmatter shows up in the Inspector.** A new **Properties** section at the top of the Inspector lists each key/value pair from the document's frontmatter, so the metadata is one click away even though it's hidden from the rendered preview. The Quick Look extension hides it too.
+- **Word, line, and heading counts now reflect body content.** The Inspector's stats no longer include the frontmatter block in their totals.
+
 ## [0.0.6] – 2026-05-02
 
 Toolbar, banner, and table-of-contents polish.
