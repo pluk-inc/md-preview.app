@@ -50,17 +50,34 @@ extension DocumentMetadata {
 
 struct InspectorView: View {
     let metadata: DocumentMetadata
+    @State private var tab: Tab = .document
+
+    enum Tab: String, CaseIterable, Identifiable {
+        case document = "Document"
+        case properties = "Properties"
+        var id: String { rawValue }
+    }
 
     var body: some View {
-        Form {
-            if !metadata.frontmatter.isEmpty {
-                Section("Properties") {
-                    ForEach(metadata.frontmatter) { entry in
-                        LabeledContent(entry.key, value: entry.value)
-                    }
-                }
+        VStack(spacing: 0) {
+            Picker("Inspector tab", selection: $tab) {
+                ForEach(Tab.allCases) { Text($0.rawValue).tag($0) }
             }
+            .pickerStyle(.segmented)
+            .labelsHidden()
+            .padding(.horizontal, 12)
+            .padding(.top, 10)
+            .padding(.bottom, 6)
 
+            switch tab {
+            case .document: documentTab
+            case .properties: propertiesTab
+            }
+        }
+    }
+
+    private var documentTab: some View {
+        Form {
             Section {
                 LabeledContent("File Name", value: metadata.fileName)
                 LabeledContent("Document Type", value: "Markdown Document")
@@ -90,5 +107,25 @@ struct InspectorView: View {
             }
         }
         .formStyle(.grouped)
+    }
+
+    @ViewBuilder
+    private var propertiesTab: some View {
+        if metadata.frontmatter.isEmpty {
+            ContentUnavailableView(
+                "No Properties",
+                systemImage: "list.bullet.rectangle",
+                description: Text("This document has no YAML frontmatter.")
+            )
+        } else {
+            Form {
+                Section {
+                    ForEach(metadata.frontmatter) { entry in
+                        LabeledContent(entry.key, value: entry.value)
+                    }
+                }
+            }
+            .formStyle(.grouped)
+        }
     }
 }
