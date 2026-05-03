@@ -10,7 +10,7 @@ enum MarkdownHTML {
     static func makeHTML(from markdown: String,
                          allowsScroll: Bool = false,
                          assetBaseHref: String? = nil) -> String {
-        let body = injectHeadingIDs(in: HTMLFormatter.format(markdown))
+        let body = injectHeadingIDs(in: HTMLFormatter.format(MarkdownFrontmatter.split(markdown).body))
         let scrollOverride = allowsScroll ? """
         <style>
         html, body { overflow: auto !important; }

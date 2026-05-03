@@ -57,6 +57,7 @@
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
 				MarkdownAssetSchemeHandler.swift,
+				MarkdownFrontmatter.swift,
 				MarkdownHTML.swift,
 				MarkdownWebView.swift,
 			);

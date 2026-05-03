@@ -15,19 +15,28 @@ struct DocumentMetadata: Equatable {
     var imageCount: Int = 0
     var modifiedDate: Date?
     var fileSize: Int64?
+    var frontmatter: [FrontmatterEntry] = []
 }
 
 extension DocumentMetadata {
     static func make(url: URL?, markdown: String) -> DocumentMetadata {
         var meta = DocumentMetadata()
         meta.fileName = url?.lastPathComponent ?? "Untitled"
-        meta.characterCount = markdown.count
-        meta.wordCount = markdown.split { $0.isWhitespace }.count
-        meta.lineCount = markdown.isEmpty ? 0 : markdown.components(separatedBy: .newlines).count
-        meta.headingCount = markdown.components(separatedBy: .newlines)
+
+        let split = MarkdownFrontmatter.split(markdown)
+        if let raw = split.raw {
+            meta.frontmatter = MarkdownFrontmatter.parse(raw)
+        }
+        let body = split.body
+        let bodyLines = body.components(separatedBy: .newlines)
+
+        meta.characterCount = body.count
+        meta.wordCount = body.split { $0.isWhitespace }.count
+        meta.lineCount = body.isEmpty ? 0 : bodyLines.count
+        meta.headingCount = bodyLines
             .filter { $0.trimmingCharacters(in: .whitespaces).hasPrefix("#") }.count
-        let totalRefs = max(0, markdown.components(separatedBy: "](").count - 1)
-        meta.imageCount = max(0, markdown.components(separatedBy: "![").count - 1)
+        let totalRefs = max(0, body.components(separatedBy: "](").count - 1)
+        meta.imageCount = max(0, body.components(separatedBy: "![").count - 1)
         meta.linkCount = max(0, totalRefs - meta.imageCount)
 
         if let url,
@@ -44,6 +53,14 @@ struct InspectorView: View {
 
     var body: some View {
         Form {
+            if !metadata.frontmatter.isEmpty {
+                Section("Properties") {
+                    ForEach(metadata.frontmatter) { entry in
+                        LabeledContent(entry.key, value: entry.value)
+                    }
+                }
+            }
+
             Section {
                 LabeledContent("File Name", value: metadata.fileName)
                 LabeledContent("Document Type", value: "Markdown Document")
