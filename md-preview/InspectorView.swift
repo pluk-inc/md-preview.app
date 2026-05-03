@@ -50,17 +50,52 @@ extension DocumentMetadata {
 
 struct InspectorView: View {
     let metadata: DocumentMetadata
+    @State private var tab: Tab = .document
+
+    enum Tab: String, CaseIterable, Identifiable {
+        case document = "Document"
+        case properties = "Properties"
+        var id: String { rawValue }
+
+        var systemImage: String {
+            switch self {
+            case .document: return "doc"
+            case .properties: return "info"
+            }
+        }
+    }
 
     var body: some View {
-        Form {
-            if !metadata.frontmatter.isEmpty {
-                Section("Properties") {
-                    ForEach(metadata.frontmatter) { entry in
-                        LabeledContent(entry.key, value: entry.value)
-                    }
-                }
-            }
+        VStack(spacing: 0) {
+            tabPicker
+                .frame(maxWidth: .infinity, alignment: .center)
+                .padding(.horizontal, 12)
+                .padding(.top, 10)
+                .padding(.bottom, 6)
 
+            switch tab {
+            case .document: documentTab
+            case .properties: propertiesTab
+            }
+        }
+    }
+
+    private var tabPicker: some View {
+        Picker("Inspector tab", selection: $tab) {
+            ForEach(Tab.allCases) { tab in
+                Image(systemName: tab.systemImage)
+                    .accessibilityLabel(tab.rawValue)
+                    .tag(tab)
+            }
+        }
+        .pickerStyle(.segmented)
+        .labelsHidden()
+        .controlSize(.large)
+        .modifier(TabPickerSizing())
+    }
+
+    private var documentTab: some View {
+        Form {
             Section {
                 LabeledContent("File Name", value: metadata.fileName)
                 LabeledContent("Document Type", value: "Markdown Document")
@@ -91,87 +126,32 @@ struct InspectorView: View {
         }
         .formStyle(.grouped)
     }
+
+    @ViewBuilder
+    private var propertiesTab: some View {
+        if metadata.frontmatter.isEmpty {
+            Text("No YAML frontmatter")
+                .foregroundStyle(.secondary)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+        } else {
+            Form {
+                Section {
+                    ForEach(metadata.frontmatter) { entry in
+                        LabeledContent(entry.key, value: entry.value)
+                    }
+                }
+            }
+            .formStyle(.grouped)
+        }
+    }
 }
 
-// Tabbed Inspector variant — kept for future iteration. To enable, replace the
-// active `InspectorView` above with this one. Splits the form into a Document
-// tab (file/content stats) and a Properties tab (YAML frontmatter).
-//
-// struct InspectorView: View {
-//     let metadata: DocumentMetadata
-//     @State private var tab: Tab = .document
-//
-//     enum Tab: String, CaseIterable, Identifiable {
-//         case document = "Document"
-//         case properties = "Properties"
-//         var id: String { rawValue }
-//     }
-//
-//     var body: some View {
-//         VStack(spacing: 0) {
-//             Picker("Inspector tab", selection: $tab) {
-//                 ForEach(Tab.allCases) { Text($0.rawValue).tag($0) }
-//             }
-//             .pickerStyle(.segmented)
-//             .labelsHidden()
-//             .padding(.horizontal, 12)
-//             .padding(.top, 10)
-//             .padding(.bottom, 6)
-//
-//             switch tab {
-//             case .document: documentTab
-//             case .properties: propertiesTab
-//             }
-//         }
-//     }
-//
-//     private var documentTab: some View {
-//         Form {
-//             Section {
-//                 LabeledContent("File Name", value: metadata.fileName)
-//                 LabeledContent("Document Type", value: "Markdown Document")
-//                 if let size = metadata.fileSize {
-//                     LabeledContent("File Size", value: size.formatted(.byteCount(style: .file)))
-//                 }
-//             }
-//             Section {
-//                 LabeledContent("Words", value: metadata.wordCount.formatted())
-//                 LabeledContent("Characters", value: metadata.characterCount.formatted())
-//                 LabeledContent("Lines", value: metadata.lineCount.formatted())
-//             }
-//             Section {
-//                 LabeledContent("Headings", value: metadata.headingCount.formatted())
-//                 LabeledContent("Links", value: metadata.linkCount.formatted())
-//                 LabeledContent("Images", value: metadata.imageCount.formatted())
-//             }
-//             if let modified = metadata.modifiedDate {
-//                 Section {
-//                     LabeledContent("Modified") {
-//                         Text(modified, format: .dateTime.year().month().day().hour().minute())
-//                     }
-//                 }
-//             }
-//         }
-//         .formStyle(.grouped)
-//     }
-//
-//     @ViewBuilder
-//     private var propertiesTab: some View {
-//         if metadata.frontmatter.isEmpty {
-//             ContentUnavailableView(
-//                 "No Properties",
-//                 systemImage: "list.bullet.rectangle",
-//                 description: Text("This document has no YAML frontmatter.")
-//             )
-//         } else {
-//             Form {
-//                 Section {
-//                     ForEach(metadata.frontmatter) { entry in
-//                         LabeledContent(entry.key, value: entry.value)
-//                     }
-//                 }
-//             }
-//             .formStyle(.grouped)
-//         }
-//     }
-// }
+private struct TabPickerSizing: ViewModifier {
+    func body(content: Content) -> some View {
+        if #available(macOS 26.0, *) {
+            content.buttonSizing(.flexible)
+        } else {
+            content.fixedSize()
+        }
+    }
+}
