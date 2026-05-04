@@ -32,6 +32,7 @@
 
 - **Native rendering** — `WKWebView` pipeline backed by [swift-markdown](https://github.com/swiftlang/swift-markdown), with heading anchors and link handling.
 - **Mermaid diagrams** — fenced `mermaid` code blocks render as diagrams in both the app and Quick Look previews, using a bundled renderer so previews work offline without a CDN request.
+- **Math equations** — LaTeX inline (`$x_1 + x_2$`), display (`$$\int_0^1 x^2\,dx$$`), and fenced `math` blocks render with a bundled KaTeX. Selecting a rendered formula and copying yields the original LaTeX source (via the official `copy-tex` extension).
 - **Document outline** — sidebar TOC that mirrors your headings; click to jump.
 - **Inspector panel** — toggleable side panel with file metadata.
 - **In-document search** — toolbar search field plus standard <kbd>⌘F</kbd> / <kbd>⌘G</kbd> / <kbd>⌘⇧G</kbd> for next/previous match.
@@ -39,6 +40,20 @@
 - **Share = copy the source** — the share toolbar feeds the picker the Markdown text itself, so **Copy** writes the raw source to the clipboard (great for pasting into ChatGPT / Claude), and Mail, Messages, and Notes get the content in the body instead of a file URL.
 - **Quick Look extension** — system-wide `.md` previews from Finder spacebar, Spotlight, and Mail attachments without launching the app.
 - **Default handler** — offers to register itself as the default `.md` opener on first launch.
+
+## Mermaid example
+
+Drop a fenced `mermaid` block in any document and it renders inline:
+
+```mermaid
+flowchart TD
+    MD[Markdown file] --> Parse[swift-markdown]
+    Parse --> Detect{Mermaid<br/>fence?}
+    Detect -- yes --> Render[mermaid.min.js]
+    Detect -- no --> Web[WKWebView]
+    Render --> Web
+    Web --> Out[App / Quick Look]
+```
 
 ## Supported file types
 
@@ -99,6 +114,7 @@ Pull requests are welcome. For larger changes, please open an issue first to dis
 
 - [swift-markdown](https://github.com/swiftlang/swift-markdown) — Markdown parser (Apple, cmark-gfm-backed)
 - [Mermaid](https://mermaid.js.org/) — bundled diagram renderer for `mermaid` fenced code blocks
+- [KaTeX](https://katex.org/) — bundled math typesetter for inline `$…$`, display `$$…$$`, and ` ```math ` blocks
 - [Sparkle](https://sparkle-project.org) — Auto-update framework
 - [Amore](http://amore.computer/) — macOS release automation (signing, notarization, DMG, hosting, appcast)
 

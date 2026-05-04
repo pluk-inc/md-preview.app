@@ -54,16 +54,22 @@ final class MarkdownWebView: NSView, WKNavigationDelegate {
     func display(markdown: String, assetBaseURL: URL? = nil) {
         assetScheme.setBaseURL(assetBaseURL)
         let baseHref = assetBaseURL == nil ? nil : "\(MarkdownAssetScheme.scheme):///"
-        let html = MarkdownHTML.makeHTML(from: markdown, assetBaseHref: baseHref)
-        webView.loadHTMLString(html, baseURL: nil)
+        let rendered = MarkdownHTML.render(markdown: markdown, assetBaseHref: baseHref)
+        webView.loadHTMLString(rendered.html, baseURL: nil)
         currentAssetBase = assetBaseURL
-        if markdown.localizedCaseInsensitiveContains("```mermaid") {
-            scheduleMermaidHeightUpdates()
+        if rendered.containsMermaid {
+            scheduleAsyncRenderHeightUpdates(delays: [0.6, 1.2, 2.4])
+        }
+        if rendered.containsMath {
+            scheduleAsyncRenderHeightUpdates(delays: [0.15, 0.4, 0.9])
         }
     }
 
-    private func scheduleMermaidHeightUpdates() {
-        for delay in [0.6, 1.2, 2.4] {
+    // KaTeX typesetting and Mermaid rendering both finish after `didFinish`,
+    // so the initial measurement misses their height. Re-measure a few times
+    // to catch the growth.
+    private func scheduleAsyncRenderHeightUpdates(delays: [TimeInterval]) {
+        for delay in delays {
             DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
                 self?.recalculateDocumentHeight()
             }
