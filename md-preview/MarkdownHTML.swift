@@ -7,11 +7,29 @@ import Foundation
 import Markdown
 
 enum MarkdownHTML {
+    struct RenderedHTML {
+        let html: String
+        let containsMath: Bool
+        let containsMermaid: Bool
+    }
+
     static func makeHTML(from markdown: String,
                          allowsScroll: Bool = false,
                          assetBaseHref: String? = nil) -> String {
-        let renderedBody = renderMermaidBlocks(in: EscapingHTMLFormatter.format(MarkdownFrontmatter.split(markdown).body))
-        let body = injectHeadingIDs(in: renderedBody.html)
+        render(markdown: markdown,
+               allowsScroll: allowsScroll,
+               assetBaseHref: assetBaseHref).html
+    }
+
+    static func render(markdown: String,
+                       allowsScroll: Bool = false,
+                       assetBaseHref: String? = nil) -> RenderedHTML {
+        let body = MarkdownFrontmatter.split(markdown).body
+        let math = extractMath(from: body)
+        let formatted = EscapingHTMLFormatter.format(math.processedMarkdown)
+        let mermaidResult = renderMermaidBlocks(in: formatted)
+        let mathResult = renderMathBlocks(in: mermaidResult.html, with: math)
+        let bodyHTML = injectHeadingIDs(in: mathResult.html)
         let scrollOverride = allowsScroll ? """
         <style>
         html, body { overflow: auto !important; }
@@ -19,7 +37,7 @@ enum MarkdownHTML {
         </style>
         """ : ""
         let baseTag = assetBaseHref.map { "<base href=\"\($0)\">" } ?? ""
-        return """
+        let html = """
         <!DOCTYPE html>
         <html>
         <head>
@@ -28,15 +46,21 @@ enum MarkdownHTML {
         \(baseTag)
         <style>\(stylesheet)</style>
         \(scrollOverride)
-        \(renderedBody.containsMermaid ? mermaidScript : "")
+        \(mathResult.containsMath ? katexHead : "")
+        \(mermaidResult.containsMermaid ? mermaidScript : "")
         </head>
         <body>
         <article class="markdown-body">
-        \(body)
+        \(bodyHTML)
         </article>
         </body>
         </html>
         """
+        return RenderedHTML(
+            html: html,
+            containsMath: mathResult.containsMath,
+            containsMermaid: mermaidResult.containsMermaid
+        )
     }
 
     private static let headingTagRegex: NSRegularExpression = {
@@ -69,6 +93,223 @@ enum MarkdownHTML {
         result += nsHtml.substring(from: cursor)
         return result
     }
+    // MARK: - Math (KaTeX)
+
+    private struct MathExtraction {
+        let processedMarkdown: String
+        let blocks: [String]
+        let inlines: [String]
+    }
+
+    private struct MathRenderResult {
+        let html: String
+        let containsMath: Bool
+    }
+
+    private static let blockMathRegex: NSRegularExpression = {
+        // swiftlint:disable:next force_try
+        try! NSRegularExpression(pattern: #"\$\$([\s\S]+?)\$\$"#)
+    }()
+
+    // Reject leading `\$` (escaped) and require non-whitespace adjacent to
+    // delimiters so prose like "$5 and $10" doesn't match.
+    private static let inlineMathRegex: NSRegularExpression = {
+        // swiftlint:disable:next force_try
+        try! NSRegularExpression(pattern: #"(?<!\\)\$(?=\S)([^\$\n]+?)(?<=\S)\$"#)
+    }()
+
+    private static let mathFenceRegex: NSRegularExpression = {
+        // swiftlint:disable:next force_try
+        try! NSRegularExpression(
+            pattern: #"<pre><code class="language-math">([\s\S]*?)</code></pre>"#
+        )
+    }()
+
+    // First alternative captures kind+index for a paragraph-wrapped block token
+    // (the common case after swift-markdown wraps the standalone token); the
+    // second captures a bare token. The wrapper is stripped in either case for
+    // block kind to keep the resulting `<div>` out of an enclosing `<p>`.
+    private static let mathTokenRegex: NSRegularExpression = {
+        // swiftlint:disable:next force_try
+        try! NSRegularExpression(
+            pattern: #"<p>MdPreviewMath(Block|Inline)(\d+)Token</p>|MdPreviewMath(Block|Inline)(\d+)Token"#
+        )
+    }()
+
+    private static func extractMath(from markdown: String) -> MathExtraction {
+        var blocks: [String] = []
+        var inlines: [String] = []
+
+        let afterBlocks = replaceMatches(of: blockMathRegex, in: markdown) { capture in
+            defer { blocks.append(capture) }
+            return "MdPreviewMathBlock\(blocks.count)Token"
+        }
+        let processed = replaceMatches(of: inlineMathRegex, in: afterBlocks) { capture in
+            defer { inlines.append(capture) }
+            return "MdPreviewMathInline\(inlines.count)Token"
+        }
+        return MathExtraction(processedMarkdown: processed, blocks: blocks, inlines: inlines)
+    }
+
+    private static func renderMathBlocks(in html: String,
+                                         with math: MathExtraction) -> MathRenderResult {
+        let hasFence = html.contains("language-math")
+        guard !math.blocks.isEmpty || !math.inlines.isEmpty || hasFence else {
+            return MathRenderResult(html: html, containsMath: false)
+        }
+
+        let withTokens: String
+        if math.blocks.isEmpty && math.inlines.isEmpty {
+            withTokens = html
+        } else {
+            let nsHtml = html as NSString
+            let matches = mathTokenRegex.matches(
+                in: html,
+                range: NSRange(location: 0, length: nsHtml.length)
+            )
+            var rebuilt = ""
+            rebuilt.reserveCapacity(html.count)
+            var cursor = 0
+            for match in matches {
+                rebuilt += nsHtml.substring(with: NSRange(
+                    location: cursor,
+                    length: match.range.location - cursor
+                ))
+                let kindRange = match.range(at: 1).location != NSNotFound
+                    ? match.range(at: 1) : match.range(at: 3)
+                let indexRange = match.range(at: 2).location != NSNotFound
+                    ? match.range(at: 2) : match.range(at: 4)
+                let isBlock = nsHtml.substring(with: kindRange) == "Block"
+                let index = Int(nsHtml.substring(with: indexRange)) ?? 0
+                let latex = isBlock ? math.blocks[index] : math.inlines[index]
+                let escaped = htmlEscape(latex)
+                rebuilt += isBlock
+                    ? "<div class=\"math math-display\">\(escaped)</div>"
+                    : "<span class=\"math math-inline\">\(escaped)</span>"
+                cursor = match.range.location + match.range.length
+            }
+            rebuilt += nsHtml.substring(from: cursor)
+            withTokens = rebuilt
+        }
+
+        // Pass the fenced block's text through unchanged: the browser decodes
+        // it back to raw LaTeX in textContent, which is what KaTeX consumes.
+        let final = hasFence
+            ? replaceMatches(of: mathFenceRegex, in: withTokens) { body in
+                "<div class=\"math math-display\">\(body)</div>"
+            }
+            : withTokens
+
+        return MathRenderResult(html: final, containsMath: true)
+    }
+
+    private static let katexHead: String = {
+        guard let js = bundledVendorResource("katex.min", ext: "js", subdir: "Vendor/KaTeX") else {
+            return """
+            <script>
+            window.addEventListener('load', () => {
+                document.querySelectorAll('.math').forEach((node) => {
+                    node.classList.add('math-error');
+                    node.textContent = 'KaTeX renderer is unavailable.\\n\\n' + node.textContent;
+                });
+            });
+            </script>
+            """
+        }
+        let css = bundledVendorResource("katex.min", ext: "css", subdir: "Vendor/KaTeX") ?? ""
+        let copyTex = bundledVendorResource("copy-tex.min", ext: "js", subdir: "Vendor/KaTeX") ?? ""
+        let safeJS = js.replacingOccurrences(of: "</script", with: "<\\/script")
+        let safeCopyTex = copyTex.replacingOccurrences(of: "</script", with: "<\\/script")
+
+        return """
+        <style>\(css)</style>
+        <script>\(safeJS)</script>
+        <script>
+        (function() {
+            function renderMath() {
+                document.querySelectorAll('.math').forEach((el) => {
+                    const tex = el.textContent;
+                    const display = el.classList.contains('math-display');
+                    try {
+                        katex.render(tex, el, {
+                            displayMode: display,
+                            throwOnError: false,
+                            output: 'htmlAndMathml'
+                        });
+                    } catch (err) {
+                        el.classList.add('math-error');
+                        el.textContent = String((err && err.message) || err);
+                    }
+                });
+            }
+            if (document.readyState === 'loading') {
+                document.addEventListener('DOMContentLoaded', renderMath, { once: true });
+            } else {
+                renderMath();
+            }
+        })();
+        </script>
+        \(safeCopyTex.isEmpty ? "" : "<script>\(safeCopyTex)</script>")
+        """
+    }()
+
+    private static func bundledVendorResource(_ name: String,
+                                              ext: String,
+                                              subdir: String) -> String? {
+        let bundles = [Bundle.main, Bundle(for: MarkdownHTMLBundleToken.self)]
+        for bundle in bundles {
+            let urls = [
+                bundle.url(forResource: name, withExtension: ext, subdirectory: subdir),
+                bundle.url(forResource: name, withExtension: ext),
+            ]
+            for url in urls.compactMap({ $0 }) {
+                if let s = try? String(contentsOf: url, encoding: .utf8) { return s }
+            }
+        }
+        return nil
+    }
+
+    private static func replaceMatches(of regex: NSRegularExpression,
+                                       in source: String,
+                                       transform: (String) -> String) -> String {
+        let nsSource = source as NSString
+        let matches = regex.matches(
+            in: source,
+            range: NSRange(location: 0, length: nsSource.length)
+        )
+        guard !matches.isEmpty else { return source }
+        var result = ""
+        result.reserveCapacity(source.count)
+        var cursor = 0
+        for match in matches {
+            result += nsSource.substring(with: NSRange(
+                location: cursor,
+                length: match.range.location - cursor
+            ))
+            result += transform(nsSource.substring(with: match.range(at: 1)))
+            cursor = match.range.location + match.range.length
+        }
+        result += nsSource.substring(from: cursor)
+        return result
+    }
+
+    private static func htmlEscape(_ string: String) -> String {
+        var out = ""
+        out.reserveCapacity(string.count)
+        for ch in string {
+            switch ch {
+            case "&": out += "&amp;"
+            case "<": out += "&lt;"
+            case ">": out += "&gt;"
+            case "\"": out += "&quot;"
+            default: out.append(ch)
+            }
+        }
+        return out
+    }
+
+    // MARK: - Mermaid
+
     private struct MermaidRenderResult {
         let html: String
         let containsMermaid: Bool
@@ -82,39 +323,21 @@ enum MarkdownHTML {
     }()
 
     private static func renderMermaidBlocks(in html: String) -> MermaidRenderResult {
-        let nsHtml = html as NSString
-        let matches = mermaidRegex.matches(
-            in: html,
-            range: NSRange(location: 0, length: nsHtml.length)
-        )
-        guard !matches.isEmpty else {
+        guard html.contains("language-mermaid") else {
             return MermaidRenderResult(html: html, containsMermaid: false)
         }
-
-        var result = ""
-        result.reserveCapacity(html.count)
-        var cursor = 0
-
-        for match in matches {
-            result += nsHtml.substring(with: NSRange(
-                location: cursor,
-                length: match.range.location - cursor
-            ))
-            let diagram = nsHtml.substring(with: match.range(at: 1))
-            result += """
+        let rendered = replaceMatches(of: mermaidRegex, in: html) { diagram in
+            """
             <div class="mermaid" role="img" aria-label="Mermaid diagram">
             \(diagram)
             </div>
             """
-            cursor = match.range.location + match.range.length
         }
-
-        result += nsHtml.substring(from: cursor)
-        return MermaidRenderResult(html: result, containsMermaid: true)
+        return MermaidRenderResult(html: rendered, containsMermaid: true)
     }
 
-    private static var mermaidScript: String {
-        guard let script = bundledMermaidScript else {
+    private static let mermaidScript: String = {
+        guard let script = bundledVendorResource("mermaid.min", ext: "js", subdir: "Vendor/Mermaid") else {
             return """
             <script>
             window.addEventListener('load', () => {
@@ -126,10 +349,10 @@ enum MarkdownHTML {
             </script>
             """
         }
-
+        let safeScript = script.replacingOccurrences(of: "</script", with: "<\\/script")
         return """
         <script>
-        \(script)
+        \(safeScript)
 
         window.addEventListener('load', async () => {
             const darkMode = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
@@ -150,26 +373,7 @@ enum MarkdownHTML {
         });
         </script>
         """
-    }
-
-    private static var bundledMermaidScript: String? {
-        let bundles = [Bundle.main, Bundle(for: MarkdownHTMLBundleToken.self)]
-        for bundle in bundles {
-            let urls = [
-                bundle.url(
-                    forResource: "mermaid.min",
-                    withExtension: "js",
-                    subdirectory: "Vendor/Mermaid"
-                ),
-                bundle.url(forResource: "mermaid.min", withExtension: "js"),
-            ]
-            for url in urls.compactMap({ $0 }) {
-                guard let script = try? String(contentsOf: url, encoding: .utf8) else { continue }
-                return script.replacingOccurrences(of: "</script", with: "<\\/script")
-            }
-        }
-        return nil
-    }
+    }()
 
     private final class MarkdownHTMLBundleToken {}
 
@@ -288,6 +492,26 @@ enum MarkdownHTML {
         white-space: pre-wrap;
         font-family: ui-monospace, "SF Mono", Menlo, monospace;
         font-size: 0.88em;
+    }
+    .math-display {
+        margin: 1.2em 0 0;
+        overflow-x: auto;
+        overflow-y: hidden;
+    }
+    .math-display .katex-display {
+        margin: 0;
+    }
+    .math-error {
+        color: #b00020;
+        background: var(--code-bg);
+        padding: 4px 8px;
+        border-radius: 6px;
+        font-family: ui-monospace, "SF Mono", Menlo, monospace;
+        font-size: 0.88em;
+        white-space: pre-wrap;
+    }
+    @media (prefers-color-scheme: dark) {
+        .math-error { color: #ff6e6e; }
     }
 
     blockquote {
