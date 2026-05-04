@@ -19,6 +19,17 @@ Version is managed centrally in `Version.xcconfig` (`MARKETING_VERSION`, `CURREN
 
 ## Release pipeline
 
+### Branch and PR naming
+
+Every release goes through a dedicated branch and PR — never push the version bump or changelog directly to `main`.
+
+- **Branch name**: `release/X.Y.Z` — exactly the marketing version, no `v` prefix, no build number, no suffix. Examples: `release/0.0.10`, `release/1.2.0`. Beta cuts use `release/X.Y.Z-betaN` (e.g. `release/0.1.0-beta1`).
+- **PR title**: `Release X.Y.Z (N)` where `N` is `CURRENT_PROJECT_VERSION`. Example: `Release 0.0.10 (14)`. This matches the commit message the release script writes, so the PR, the bump commit, and the eventual git tag all line up. For betas: `Release X.Y.Z-betaN (build)`.
+- **PR body**: short Summary (version bump + changelog added), a "What's in X.Y.Z" section that mirrors the changelog bullets, and a Test plan.
+- **One PR per release**. The branch contains only the bump (`Version.xcconfig`) and the new `CHANGELOG.md` entry — keep unrelated changes out so the release diff stays auditable.
+
+### Commands
+
 One command:
 
 ```bash
@@ -30,7 +41,9 @@ One command:
 ./scripts/release.sh --skip-github       # local amore release only
 ```
 
-Before running, **add a `CHANGELOG.md` entry** for the version being shipped:
+Before running, **add a `CHANGELOG.md` entry** for the version being shipped. **Always invoke the `changelog-maintenance` skill** (`.claude/skills/changelog-maintenance`) via the Skill tool whenever the user asks you to write, generate, or update a changelog entry — do not draft freeform. The skill enforces the project's house format, the Keep-a-Changelog category split (Added / Changed / Fixed / Security), and contributor crediting (it always inspects `git log` and `gh pr list` for non-maintainer authors and adds a `### Contributors` block with `@username` GitHub tags when any are found).
+
+Entry shape:
 
 ```md
 ## [0.0.2] – 2026-05-01
