@@ -49,20 +49,6 @@ Or grab the latest signed and notarized DMG from the [Releases](https://github.c
 - **Quick Look extension** — system-wide `.md` previews from Finder spacebar, Spotlight, and Mail attachments without launching the app.
 - **Default handler** — offers to register itself as the default `.md` opener on first launch.
 
-## Mermaid example
-
-Drop a fenced `mermaid` block in any document and it renders inline:
-
-```mermaid
-flowchart TD
-    MD[Markdown file] --> Parse[swift-markdown]
-    Parse --> Detect{Mermaid<br/>fence?}
-    Detect -- yes --> Render[mermaid.min.js]
-    Detect -- no --> Web[WKWebView]
-    Render --> Web
-    Web --> Out[App / Quick Look]
-```
-
 ## Supported file types
 
 `.md`, `.markdown`, `.mdown`, `.txt`
