@@ -11,6 +11,7 @@ enum MarkdownHTML {
         let html: String
         let containsMath: Bool
         let containsMermaid: Bool
+        let containsHighlightedCode: Bool
     }
 
     static func makeHTML(from markdown: String,
@@ -28,7 +29,8 @@ enum MarkdownHTML {
         let math = extractMath(from: body)
         let formatted = EscapingHTMLFormatter.format(math.processedMarkdown)
         let mermaidResult = renderMermaidBlocks(in: formatted)
-        let mathResult = renderMathBlocks(in: mermaidResult.html, with: math)
+        let shikiResult = detectHighlightableCode(in: mermaidResult.html)
+        let mathResult = renderMathBlocks(in: shikiResult.html, with: math)
         let bodyHTML = injectHeadingIDs(in: mathResult.html)
         let scrollOverride = allowsScroll ? """
         <style>
@@ -48,6 +50,7 @@ enum MarkdownHTML {
         \(scrollOverride)
         \(mathResult.containsMath ? katexHead : "")
         \(mermaidResult.containsMermaid ? mermaidScript : "")
+        \(shikiResult.containsHighlightedCode ? shikiScript : "")
         </head>
         <body>
         <article class="markdown-body">
@@ -59,7 +62,8 @@ enum MarkdownHTML {
         return RenderedHTML(
             html: html,
             containsMath: mathResult.containsMath,
-            containsMermaid: mermaidResult.containsMermaid
+            containsMermaid: mermaidResult.containsMermaid,
+            containsHighlightedCode: shikiResult.containsHighlightedCode
         )
     }
 
@@ -428,6 +432,66 @@ enum MarkdownHTML {
         """
     }()
 
+    // MARK: - Syntax highlighting (Shiki)
+
+    private struct ShikiRenderResult {
+        let html: String
+        let containsHighlightedCode: Bool
+    }
+
+    private static let highlightableCodeRegex: NSRegularExpression = {
+        // swiftlint:disable:next force_try
+        try! NSRegularExpression(pattern: #"<pre><code class="language-[^"]+">"#)
+    }()
+
+    private static func detectHighlightableCode(in html: String) -> ShikiRenderResult {
+        let nsHtml = html as NSString
+        let firstMatch = highlightableCodeRegex.firstMatch(
+            in: html,
+            range: NSRange(location: 0, length: nsHtml.length)
+        )
+        return ShikiRenderResult(html: html, containsHighlightedCode: firstMatch != nil)
+    }
+
+    private static let shikiScript: String = {
+        guard let script = bundledVendorResource("shiki.bundle", ext: "js", subdir: "Vendor/Shiki") else {
+            return """
+            <script>
+            window.addEventListener('load', () => {
+                document.querySelectorAll('pre > code[class*="language-"]').forEach((node) => {
+                    const pre = node.parentElement;
+                    if (!pre || node.classList.contains('language-mermaid')) return;
+                    pre.classList.add('shiki-error');
+                    pre.setAttribute('data-shiki-error', 'Shiki renderer is unavailable.');
+                });
+            });
+            </script>
+            """
+        }
+        let safeScript = script.replacingOccurrences(of: "</script", with: "<\\/script")
+        return """
+        <script>
+        \(safeScript)
+
+        window.addEventListener('load', async () => {
+            if (!window.MdPreviewShiki || !window.MdPreviewShiki.renderAll) return;
+            try {
+                await window.MdPreviewShiki.renderAll(document);
+                window.dispatchEvent(new Event('md-preview-shiki-rendered'));
+            } catch (error) {
+                document.querySelectorAll('pre > code[class*="language-"]').forEach((node) => {
+                    const pre = node.parentElement;
+                    if (!pre || node.classList.contains('language-mermaid')) return;
+                    pre.classList.add('shiki-error');
+                    pre.setAttribute('data-shiki-error', String((error && error.message) || error));
+                });
+                console.error('Shiki rendering failed', error);
+            }
+        });
+        </script>
+        """
+    }()
+
     private final class MarkdownHTMLBundleToken {}
 
 
@@ -527,6 +591,28 @@ enum MarkdownHTML {
         padding: 0;
         background: transparent;
         font-size: 0.88em;
+    }
+    .shiki,
+    .shiki code {
+        font-family: ui-monospace, "SF Mono", Menlo, monospace;
+    }
+    .shiki {
+        background: var(--code-bg) !important;
+    }
+    .shiki code {
+        display: block;
+        min-width: max-content;
+    }
+    @media (prefers-color-scheme: dark) {
+        .shiki span {
+            color: var(--shiki-dark) !important;
+            font-style: var(--shiki-dark-font-style) !important;
+            font-weight: var(--shiki-dark-font-weight) !important;
+            text-decoration: var(--shiki-dark-text-decoration) !important;
+        }
+    }
+    .shiki-error {
+        outline: 1px solid rgba(176, 0, 32, 0.35);
     }
     .mermaid {
         margin: 1.6em 0 0;

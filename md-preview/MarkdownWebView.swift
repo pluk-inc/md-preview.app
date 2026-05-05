@@ -63,11 +63,14 @@ final class MarkdownWebView: NSView, WKNavigationDelegate {
         if rendered.containsMath {
             scheduleAsyncRenderHeightUpdates(delays: [0.15, 0.4, 0.9])
         }
+        if rendered.containsHighlightedCode {
+            scheduleAsyncRenderHeightUpdates(delays: [0.15, 0.4, 0.9])
+        }
     }
 
-    // KaTeX typesetting and Mermaid rendering both finish after `didFinish`,
-    // so the initial measurement misses their height. Re-measure a few times
-    // to catch the growth.
+    // KaTeX, Mermaid, and Shiki all finish after `didFinish`, so the initial
+    // measurement can miss their final height. Re-measure a few times to catch
+    // the growth.
     private func scheduleAsyncRenderHeightUpdates(delays: [TimeInterval]) {
         for delay in delays {
             DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
