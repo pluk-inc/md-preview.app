@@ -26,8 +26,11 @@ enum MarkdownHTML {
                        assetBaseHref: String? = nil) -> RenderedHTML {
         let body = MarkdownFrontmatter.split(markdown).body
         let math = extractMath(from: body)
-        let formatted = EscapingHTMLFormatter.format(math.processedMarkdown)
-        let mermaidResult = renderMermaidBlocks(in: formatted)
+        let footnotes = extractFootnotes(from: math.processedMarkdown)
+        let formatted = EscapingHTMLFormatter.format(footnotes.markdown)
+        let withFootnoteReferences = renderFootnoteReferences(in: formatted, footnotes: footnotes)
+        let withFootnotes = appendFootnoteSection(to: withFootnoteReferences, footnotes: footnotes)
+        let mermaidResult = renderMermaidBlocks(in: withFootnotes)
         let mathResult = renderMathBlocks(in: mermaidResult.html, with: math)
         let bodyHTML = injectHeadingIDs(in: mathResult.html)
         let scrollOverride = allowsScroll ? """
@@ -61,6 +64,494 @@ enum MarkdownHTML {
             containsMath: mathResult.containsMath,
             containsMermaid: mermaidResult.containsMermaid
         )
+    }
+
+    // MARK: - Footnotes
+
+    private struct FootnoteExtraction {
+        let markdown: String
+        let definitions: [String: FootnoteDefinition]
+        let references: [FootnoteReference]
+        let orderedLabels: [String]
+        let noteIDsByLabel: [String: String]
+        let referenceIDsByLabel: [String: [String]]
+    }
+
+    private struct FootnoteDefinition {
+        let label: String
+        let markdown: String
+    }
+
+    private struct FootnoteDefinitionExtraction {
+        let markdown: String
+        let definitions: [String: FootnoteDefinition]
+    }
+
+    private struct FootnoteReference {
+        let token: String
+        let canonicalLabel: String
+        let displayNumber: Int
+        let noteID: String
+        let referenceID: String
+    }
+
+    private struct MarkdownFence {
+        let marker: Character
+        let length: Int
+    }
+
+    private struct FootnoteIDAllocator {
+        private var usedSlugs: Set<String> = []
+
+        mutating func slug(for label: String) -> String {
+            var slug = ""
+            var previousWasSeparator = false
+
+            for scalar in label.lowercased().unicodeScalars {
+                if CharacterSet.alphanumerics.contains(scalar) {
+                    slug.unicodeScalars.append(scalar)
+                    previousWasSeparator = false
+                } else if scalar.value == 45 || scalar.value == 95 {
+                    if !slug.isEmpty {
+                        slug.unicodeScalars.append(scalar)
+                        previousWasSeparator = false
+                    }
+                } else if !slug.isEmpty, !previousWasSeparator {
+                    slug.append("-")
+                    previousWasSeparator = true
+                }
+            }
+
+            slug = slug.trimmingCharacters(in: CharacterSet(charactersIn: "-_"))
+            if slug.isEmpty {
+                slug = "note"
+            }
+
+            let base = slug
+            var suffix = 2
+            while usedSlugs.contains(slug) {
+                slug = "\(base)-\(suffix)"
+                suffix += 1
+            }
+            usedSlugs.insert(slug)
+            return slug
+        }
+    }
+
+    private static let footnoteDefinitionRegex: NSRegularExpression = {
+        // swiftlint:disable:next force_try
+        try! NSRegularExpression(pattern: #"^[ \t]{0,3}\[\^([^\]\r\n]+)\]:[ \t]?(.*)$"#)
+    }()
+
+    private static func extractFootnotes(from markdown: String) -> FootnoteExtraction {
+        let definitionExtraction = extractFootnoteDefinitions(from: markdown)
+        guard !definitionExtraction.definitions.isEmpty else {
+            return FootnoteExtraction(
+                markdown: definitionExtraction.markdown,
+                definitions: [:],
+                references: [],
+                orderedLabels: [],
+                noteIDsByLabel: [:],
+                referenceIDsByLabel: [:]
+            )
+        }
+
+        var references: [FootnoteReference] = []
+        var orderedLabels: [String] = []
+        var noteIDsByLabel: [String: String] = [:]
+        var referenceIDsByLabel: [String: [String]] = [:]
+        var referenceCountsByLabel: [String: Int] = [:]
+        var allocator = FootnoteIDAllocator()
+
+        let processedMarkdown = replaceFootnoteReferences(
+            in: definitionExtraction.markdown,
+            definitions: definitionExtraction.definitions
+        ) { canonicalLabel, originalLabel in
+            if noteIDsByLabel[canonicalLabel] == nil {
+                let slug = allocator.slug(for: originalLabel)
+                noteIDsByLabel[canonicalLabel] = "fn-\(slug)"
+                orderedLabels.append(canonicalLabel)
+            }
+
+            let count = (referenceCountsByLabel[canonicalLabel] ?? 0) + 1
+            referenceCountsByLabel[canonicalLabel] = count
+
+            let noteID = noteIDsByLabel[canonicalLabel] ?? "fn-note"
+            let referenceID = count == 1
+                ? "fnref-\(String(noteID.dropFirst(3)))"
+                : "fnref-\(String(noteID.dropFirst(3)))-\(count)"
+            let displayNumber = orderedLabels.firstIndex(of: canonicalLabel).map { $0 + 1 } ?? 1
+            let token = "MdPreviewFootnoteRef\(references.count)Token"
+
+            references.append(FootnoteReference(
+                token: token,
+                canonicalLabel: canonicalLabel,
+                displayNumber: displayNumber,
+                noteID: noteID,
+                referenceID: referenceID
+            ))
+            referenceIDsByLabel[canonicalLabel, default: []].append(referenceID)
+            return token
+        }
+
+        return FootnoteExtraction(
+            markdown: processedMarkdown,
+            definitions: definitionExtraction.definitions,
+            references: references,
+            orderedLabels: orderedLabels,
+            noteIDsByLabel: noteIDsByLabel,
+            referenceIDsByLabel: referenceIDsByLabel
+        )
+    }
+
+    private static func extractFootnoteDefinitions(from markdown: String) -> FootnoteDefinitionExtraction {
+        let lines = markdown.components(separatedBy: "\n")
+        var outputLines: [String] = []
+        outputLines.reserveCapacity(lines.count)
+
+        var definitions: [String: FootnoteDefinition] = [:]
+        var activeFence: MarkdownFence?
+        var index = 0
+
+        while index < lines.count {
+            let line = lines[index]
+
+            if let fence = activeFence {
+                outputLines.append(line)
+                if closesFence(line, opening: fence) {
+                    activeFence = nil
+                }
+                index += 1
+                continue
+            }
+
+            if let fence = fenceMarker(in: line) {
+                activeFence = fence
+                outputLines.append(line)
+                index += 1
+                continue
+            }
+
+            guard let definitionStart = parseFootnoteDefinitionStart(line) else {
+                outputLines.append(line)
+                index += 1
+                continue
+            }
+
+            let canonicalLabel = canonicalFootnoteLabel(definitionStart.label)
+            guard !canonicalLabel.isEmpty else {
+                outputLines.append(line)
+                index += 1
+                continue
+            }
+
+            var contentLines = [definitionStart.body]
+            index += 1
+
+            while index < lines.count {
+                let continuation = lines[index]
+                if isFootnoteContinuationLine(continuation) {
+                    contentLines.append(stripFootnoteContinuationIndent(continuation))
+                    index += 1
+                    continue
+                }
+
+                if continuation.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+                   index + 1 < lines.count,
+                   isFootnoteContinuationLine(lines[index + 1]) {
+                    contentLines.append("")
+                    index += 1
+                    continue
+                }
+
+                break
+            }
+
+            if definitions[canonicalLabel] == nil {
+                let definitionMarkdown = contentLines
+                    .joined(separator: "\n")
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
+                definitions[canonicalLabel] = FootnoteDefinition(
+                    label: definitionStart.label,
+                    markdown: definitionMarkdown
+                )
+            }
+        }
+
+        return FootnoteDefinitionExtraction(
+            markdown: outputLines.joined(separator: "\n"),
+            definitions: definitions
+        )
+    }
+
+    private static func parseFootnoteDefinitionStart(_ line: String) -> (label: String, body: String)? {
+        let nsLine = line as NSString
+        guard let match = footnoteDefinitionRegex.firstMatch(
+            in: line,
+            range: NSRange(location: 0, length: nsLine.length)
+        ) else { return nil }
+
+        let label = nsLine
+            .substring(with: match.range(at: 1))
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        let body = nsLine.substring(with: match.range(at: 2))
+        return (label, body)
+    }
+
+    private static func replaceFootnoteReferences(
+        in markdown: String,
+        definitions: [String: FootnoteDefinition],
+        replacement: (String, String) -> String
+    ) -> String {
+        let lines = markdown.components(separatedBy: "\n")
+        var outputLines: [String] = []
+        outputLines.reserveCapacity(lines.count)
+        var activeFence: MarkdownFence?
+
+        for line in lines {
+            if let fence = activeFence {
+                outputLines.append(line)
+                if closesFence(line, opening: fence) {
+                    activeFence = nil
+                }
+                continue
+            }
+
+            if let fence = fenceMarker(in: line) {
+                activeFence = fence
+                outputLines.append(line)
+                continue
+            }
+
+            outputLines.append(replaceFootnoteReferencesInLine(
+                line,
+                definitions: definitions,
+                replacement: replacement
+            ))
+        }
+
+        return outputLines.joined(separator: "\n")
+    }
+
+    private static func replaceFootnoteReferencesInLine(
+        _ line: String,
+        definitions: [String: FootnoteDefinition],
+        replacement: (String, String) -> String
+    ) -> String {
+        var result = ""
+        result.reserveCapacity(line.count)
+        var index = line.startIndex
+
+        while index < line.endIndex {
+            if line[index] == "`" {
+                if let codeEnd = matchingInlineCodeSpanEnd(in: line, from: index) {
+                    result += line[index..<codeEnd]
+                    index = codeEnd
+                    continue
+                }
+
+                let runEnd = backtickRunEnd(in: line, from: index)
+                result += line[index..<runEnd]
+                index = runEnd
+                continue
+            }
+
+            if line[index] == "[",
+               line.index(after: index) < line.endIndex,
+               line[line.index(after: index)] == "^",
+               !isImageAltTextStart(in: line, at: index),
+               let close = line[line.index(after: index)..<line.endIndex].firstIndex(of: "]") {
+                let labelStart = line.index(index, offsetBy: 2)
+                let label = String(line[labelStart..<close])
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
+                let canonicalLabel = canonicalFootnoteLabel(label)
+
+                if !canonicalLabel.isEmpty, definitions[canonicalLabel] != nil {
+                    result += replacement(canonicalLabel, label)
+                    index = line.index(after: close)
+                    continue
+                }
+            }
+
+            result.append(line[index])
+            index = line.index(after: index)
+        }
+
+        return result
+    }
+
+    private static func renderFootnoteReferences(in html: String,
+                                                 footnotes: FootnoteExtraction) -> String {
+        guard !footnotes.references.isEmpty else { return html }
+        var rendered = html
+
+        for reference in footnotes.references {
+            let referenceHTML = """
+            <sup id="\(htmlEscape(reference.referenceID))" class="footnote-ref"><a href="#\(htmlEscape(reference.noteID))" role="doc-noteref" aria-label="Footnote \(reference.displayNumber)">\(reference.displayNumber)</a></sup>
+            """
+            rendered = rendered.replacingOccurrences(of: reference.token, with: referenceHTML)
+        }
+
+        return rendered
+    }
+
+    private static func appendFootnoteSection(to html: String,
+                                              footnotes: FootnoteExtraction) -> String {
+        guard !footnotes.orderedLabels.isEmpty else { return html }
+
+        var section = """
+
+        <section class="footnotes" role="doc-endnotes">
+        <ol>
+
+        """
+
+        for canonicalLabel in footnotes.orderedLabels {
+            guard let definition = footnotes.definitions[canonicalLabel],
+                  let noteID = footnotes.noteIDsByLabel[canonicalLabel] else { continue }
+
+            let referenceIDs = footnotes.referenceIDsByLabel[canonicalLabel] ?? []
+            let renderedDefinition = renderFootnoteDefinition(
+                definition.markdown,
+                referenceIDs: referenceIDs
+            )
+            section += """
+            <li id="\(htmlEscape(noteID))">
+            \(renderedDefinition)
+            </li>
+
+            """
+        }
+
+        section += """
+        </ol>
+        </section>
+
+        """
+        return html + section
+    }
+
+    private static func renderFootnoteDefinition(_ markdown: String,
+                                                 referenceIDs: [String]) -> String {
+        let rendered = EscapingHTMLFormatter.format(markdown)
+        let backlinks = referenceIDs.enumerated().map { index, referenceID in
+            let suffix = index == 0 ? "" : "<sup>\(index + 1)</sup>"
+            return """
+            <a href="#\(htmlEscape(referenceID))" class="footnote-backref" aria-label="Back to reference \(index + 1)">&#8617;\(suffix)</a>
+            """
+        }.joined(separator: " ")
+
+        guard !backlinks.isEmpty else { return rendered }
+        guard let insertionPoint = rendered.range(of: "</p>", options: .backwards) else {
+            return rendered + backlinks
+        }
+
+        var result = rendered
+        result.insert(contentsOf: " \(backlinks)", at: insertionPoint.lowerBound)
+        return result
+    }
+
+    private static func canonicalFootnoteLabel(_ label: String) -> String {
+        label.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+    }
+
+    private static func isFootnoteContinuationLine(_ line: String) -> Bool {
+        guard !line.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return false }
+        var spaces = 0
+        for character in line {
+            if character == "\t" { return true }
+            if character == " " {
+                spaces += 1
+                if spaces >= 2 { return true }
+            } else {
+                return false
+            }
+        }
+        return false
+    }
+
+    private static func stripFootnoteContinuationIndent(_ line: String) -> String {
+        guard let first = line.first else { return line }
+        if first == "\t" {
+            return String(line.dropFirst())
+        }
+
+        let leadingSpaces = line.prefix(while: { $0 == " " }).count
+        guard leadingSpaces >= 2 else { return line }
+        return String(line.dropFirst(min(leadingSpaces, 4)))
+    }
+
+    private static func fenceMarker(in line: String) -> MarkdownFence? {
+        var index = line.startIndex
+        var leadingSpaces = 0
+
+        while index < line.endIndex, line[index] == " " {
+            leadingSpaces += 1
+            guard leadingSpaces <= 3 else { return nil }
+            index = line.index(after: index)
+        }
+
+        guard index < line.endIndex, line[index] == "`" || line[index] == "~" else {
+            return nil
+        }
+
+        let marker = line[index]
+        var length = 0
+        while index < line.endIndex, line[index] == marker {
+            length += 1
+            index = line.index(after: index)
+        }
+
+        guard length >= 3 else { return nil }
+        return MarkdownFence(marker: marker, length: length)
+    }
+
+    private static func closesFence(_ line: String, opening: MarkdownFence) -> Bool {
+        guard let marker = fenceMarker(in: line), marker.marker == opening.marker else {
+            return false
+        }
+        return marker.length >= opening.length
+    }
+
+    private static func isImageAltTextStart(in line: String, at index: String.Index) -> Bool {
+        guard index > line.startIndex else { return false }
+        return line[line.index(before: index)] == "!"
+    }
+
+    private static func matchingInlineCodeSpanEnd(in line: String,
+                                                  from start: String.Index) -> String.Index? {
+        let openingLength = backtickRunLength(in: line, from: start)
+        var index = line.index(start, offsetBy: openingLength)
+
+        while index < line.endIndex {
+            if line[index] != "`" {
+                index = line.index(after: index)
+                continue
+            }
+
+            let closingLength = backtickRunLength(in: line, from: index)
+            let runEnd = line.index(index, offsetBy: closingLength)
+            if closingLength == openingLength {
+                return runEnd
+            }
+            index = runEnd
+        }
+
+        return nil
+    }
+
+    private static func backtickRunEnd(in line: String, from start: String.Index) -> String.Index {
+        line.index(start, offsetBy: backtickRunLength(in: line, from: start))
+    }
+
+    private static func backtickRunLength(in line: String, from start: String.Index) -> Int {
+        var index = start
+        var length = 0
+        while index < line.endIndex, line[index] == "`" {
+            length += 1
+            index = line.index(after: index)
+        }
+        return length
     }
 
     private static let headingTagRegex: NSRegularExpression = {
@@ -507,6 +998,15 @@ enum MarkdownHTML {
 
     a { color: var(--link); text-decoration: none; }
     a:hover { text-decoration: underline; }
+    sup.footnote-ref {
+        font-size: 0.72em;
+        line-height: 0;
+        margin-left: 1px;
+        vertical-align: super;
+    }
+    sup.footnote-ref a {
+        text-decoration: none;
+    }
 
     code {
         font-family: ui-monospace, "SF Mono", Menlo, monospace;
@@ -602,6 +1102,36 @@ enum MarkdownHTML {
         height: 1px;
         background: var(--grid);
         margin: 2.35em 0;
+    }
+    .footnotes {
+        margin: 2.35em 0 0;
+        padding-top: 0.9em;
+        border-top: 1px solid var(--grid);
+        color: var(--secondary);
+        font-size: 0.9em;
+    }
+    .footnotes ol {
+        margin-top: 0;
+        padding-left: 1.35em;
+    }
+    .footnotes li {
+        margin-top: 0.45em;
+    }
+    .footnotes li:first-child {
+        margin-top: 0;
+    }
+    .footnotes p {
+        margin-top: 0.35em;
+    }
+    .footnotes p:first-child {
+        margin-top: 0;
+    }
+    .footnote-backref {
+        margin-left: 0.25em;
+        white-space: nowrap;
+    }
+    .footnote-backref sup {
+        font-size: 0.72em;
     }
 
     img {

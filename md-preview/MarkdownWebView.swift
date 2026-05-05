@@ -273,6 +273,11 @@ final class MarkdownWebView: NSView, WKNavigationDelegate {
                  decidePolicyFor navigationAction: WKNavigationAction,
                  decisionHandler: @escaping @MainActor @Sendable (WKNavigationActionPolicy) -> Void) {
         if navigationAction.navigationType == .linkActivated, let url = navigationAction.request.url {
+            if isInDocumentFragmentNavigation(url) {
+                decisionHandler(.allow)
+                return
+            }
+
             if url.scheme == MarkdownAssetScheme.scheme,
                let base = currentAssetBase,
                let resolved = MarkdownAssetScheme.resolve(url, against: base) {
@@ -284,6 +289,27 @@ final class MarkdownWebView: NSView, WKNavigationDelegate {
             return
         }
         decisionHandler(.allow)
+    }
+
+    private func isInDocumentFragmentNavigation(_ url: URL) -> Bool {
+        guard url.fragment != nil else { return false }
+
+        if url.scheme == nil {
+            return true
+        }
+
+        if url.scheme == "about", url.absoluteString.hasPrefix("about:blank#") {
+            return true
+        }
+
+        if url.scheme == MarkdownAssetScheme.scheme,
+           url.host == nil,
+           url.query == nil,
+           url.path.isEmpty || url.path == "/" {
+            return true
+        }
+
+        return false
     }
 
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
