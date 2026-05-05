@@ -76,8 +76,9 @@ final class ContentViewController: NSViewController {
         webView.find(query, backwards: backwards)
     }
 
-    @IBAction func print(_ sender: Any?) {
-        webView.printDocument(from: view.window)
+    func printDocument() {
+        guard let window = view.window else { return }
+        webView.printDocument(from: window)
     }
 
     func scrollToHeading(index: Int) {

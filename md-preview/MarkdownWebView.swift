@@ -98,9 +98,7 @@ final class MarkdownWebView: NSView, WKNavigationDelegate {
         highlightMatches(for: query, backwards: backwards)
     }
 
-    func printDocument(from window: NSWindow?) {
-        neutralizeWebKitScrollEdgeInsets()
-
+    func printDocument(from window: NSWindow) {
         let printInfo = NSPrintInfo.shared.copy() as? NSPrintInfo ?? NSPrintInfo()
         printInfo.horizontalPagination = .fit
         printInfo.verticalPagination = .automatic
@@ -108,13 +106,12 @@ final class MarkdownWebView: NSView, WKNavigationDelegate {
         printInfo.isVerticallyCentered = false
 
         let operation = webView.printOperation(with: printInfo)
-        operation.jobTitle = window?.title ?? "Markdown Preview"
-
-        if let window {
-            operation.runModal(for: window, delegate: nil, didRun: nil, contextInfo: nil)
-        } else {
-            operation.run()
-        }
+        operation.jobTitle = window.title
+        // WKWebView's print view needs an explicit frame, otherwise AppKit
+        // asserts in `runModal` when the operation tries to lay out at zero
+        // size — Apple's documented pattern.
+        operation.view?.frame = webView.bounds
+        operation.runModal(for: window, delegate: nil, didRun: nil, contextInfo: nil)
     }
 
     func headingOffset(index: Int, completion: @escaping (CGFloat?) -> Void) {
