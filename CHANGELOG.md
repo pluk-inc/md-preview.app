@@ -1,5 +1,23 @@
 # Changelog
 
+## [0.0.12] – 2026-05-05
+
+Code highlighting, richer Markdown heading and footnote rendering, and README sponsor updates.
+
+### Added
+
+- **Code blocks now use Shiki syntax highlighting.** Fenced code blocks render with bundled Shiki highlighting in both the app and Quick Look, so previews show language-aware colors without needing network access.
+- **README now includes a sponsor section.** Added Pluk sponsorship details and branding to the project README.
+
+### Fixed
+
+- **Footnotes now render correctly.** Markdown footnote definitions and references are collected, linked, and rendered as a proper footnotes section instead of appearing as plain paragraph content.
+- **Inline markup works inside headings.** Emphasis, links, code spans, and other inline Markdown now render correctly inside heading text while keeping generated heading anchors stable.
+
+### Changed
+
+- **Trimmed the README Mermaid example.** Removed the embedded Mermaid sample from the README now that diagram support is covered by the app behavior itself.
+
 ## [0.0.11] – 2026-05-04
 
 Homebrew install path and stronger default-handler claims for Markdown files.
