@@ -63,7 +63,8 @@ final class ContentViewController: NSViewController {
 
         lastLaidOutSize = laidOutSize
         applyDocumentHeight()
-        webView.recalculateDocumentHeight()
+        // Width changes propagate to body via the WKWebView; the JS-side
+        // ResizeObserver pushes a fresh height back automatically.
     }
 
     func display(markdown: String, assetBaseURL: URL? = nil) {

@@ -9,6 +9,7 @@ import Markdown
 enum MarkdownHTML {
     struct RenderedHTML {
         let html: String
+        let articleHTML: String
         let containsMath: Bool
         let containsMermaid: Bool
         let containsHighlightedCode: Bool
@@ -36,6 +37,9 @@ enum MarkdownHTML {
         let footnoteDefinitions = renderFootnoteDefinitions(footnotes)
         let headingsHTML = injectHeadingIDs(in: footnoteReferenceHTML + footnoteDefinitions.html)
         let bodyHTML = injectRTLDirection(in: headingsHTML)
+        let containsMath = mathResult.containsMath || footnoteDefinitions.containsMath
+        let containsMermaid = mermaidResult.containsMermaid || footnoteDefinitions.containsMermaid
+        let containsHighlightedCode = shikiResult.containsHighlightedCode || footnoteDefinitions.containsHighlightedCode
         let scrollOverride = allowsScroll ? """
         <style>
         html, body { overflow: auto !important; }
@@ -52,9 +56,10 @@ enum MarkdownHTML {
         \(baseTag)
         <style>\(stylesheet)</style>
         \(scrollOverride)
-        \(mathResult.containsMath || footnoteDefinitions.containsMath ? katexHead : "")
-        \(mermaidResult.containsMermaid || footnoteDefinitions.containsMermaid ? mermaidScript : "")
-        \(shikiResult.containsHighlightedCode || footnoteDefinitions.containsHighlightedCode ? shikiScript : "")
+        \(hostBridgeScript)
+        \(containsMath ? katexHead : "")
+        \(containsMermaid ? mermaidScript : "")
+        \(containsHighlightedCode ? shikiScript : "")
         </head>
         <body>
         <article class="markdown-body">
@@ -65,9 +70,10 @@ enum MarkdownHTML {
         """
         return RenderedHTML(
             html: html,
-            containsMath: mathResult.containsMath || footnoteDefinitions.containsMath,
-            containsMermaid: mermaidResult.containsMermaid || footnoteDefinitions.containsMermaid,
-            containsHighlightedCode: shikiResult.containsHighlightedCode || footnoteDefinitions.containsHighlightedCode
+            articleHTML: bodyHTML,
+            containsMath: containsMath,
+            containsMermaid: containsMermaid,
+            containsHighlightedCode: containsHighlightedCode
         )
     }
 
@@ -621,6 +627,90 @@ enum MarkdownHTML {
         return MathRenderResult(html: rebuilt, containsMath: true)
     }
 
+    // Always-on host bridge: pushes the document height to the AppKit host via
+    // a WKScriptMessageHandler instead of having the host poll. Quietly no-ops
+    // when the bridge isn't installed (e.g. Quick Look render).
+    private static let hostBridgeScript: String = """
+    <script>
+    (() => {
+        const post = (() => {
+            try {
+                const h = window.webkit && window.webkit.messageHandlers
+                    && window.webkit.messageHandlers.mdPreviewHost;
+                if (!h) return () => {};
+                return (msg) => h.postMessage(msg);
+            } catch (e) { return () => {}; }
+        })();
+
+        function measureHeight() {
+            const body = document.body;
+            const article = document.querySelector('.markdown-body');
+            if (!body || !article) return 1;
+            const rect = article.getBoundingClientRect();
+            const cs = getComputedStyle(body);
+            const pt = parseFloat(cs.paddingTop) || 0;
+            const pb = parseFloat(cs.paddingBottom) || 0;
+            return Math.max(rect.bottom + pb, pt + article.scrollHeight + pb, 1);
+        }
+
+        let last = -1;
+        let raf = 0;
+
+        function pushHeight() {
+            if (raf) return;
+            raf = requestAnimationFrame(() => {
+                raf = 0;
+                const h = Math.ceil(measureHeight());
+                if (h !== last) {
+                    last = h;
+                    post({ kind: 'height', value: h });
+                }
+            });
+        }
+
+        window.MdPreviewHost = { pushHeight, measureHeight };
+
+        // Incremental-update entry point. Each renderer (KaTeX/Mermaid/Shiki)
+        // registers an idempotent reapplier that re-processes the current
+        // article. Same-flag re-renders skip the WKWebView reload entirely.
+        const reappliers = [];
+        window.MdPreview = window.MdPreview || {};
+        window.MdPreview.registerReapplier = (fn) => {
+            if (typeof fn === 'function') reappliers.push(fn);
+        };
+        window.MdPreview.update = (articleHTML) => {
+            const article = document.querySelector('.markdown-body');
+            if (!article) return;
+            article.innerHTML = articleHTML;
+            for (const fn of reappliers) {
+                try { fn(); } catch (e) { /* one bad apple shouldn't block others */ }
+            }
+            pushHeight();
+        };
+
+        function start() {
+            pushHeight();
+            try {
+                const ro = new ResizeObserver(pushHeight);
+                ro.observe(document.body);
+                const article = document.querySelector('.markdown-body');
+                if (article) ro.observe(article);
+            } catch (e) {}
+            window.addEventListener('md-preview-mermaid-rendered', pushHeight);
+            window.addEventListener('md-preview-shiki-rendered', pushHeight);
+            window.addEventListener('md-preview-math-rendered', pushHeight);
+            window.addEventListener('load', pushHeight);
+        }
+
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', start, { once: true });
+        } else {
+            start();
+        }
+    })();
+    </script>
+    """
+
     private static let katexHead: String = {
         guard let js = bundledVendorResource("katex.min", ext: "js", subdir: "Vendor/KaTeX") else {
             return """
@@ -646,6 +736,7 @@ enum MarkdownHTML {
         (function() {
             function renderMath() {
                 document.querySelectorAll('.math').forEach((el) => {
+                    if (el.dataset.mathDone === '1') return;
                     const tex = el.textContent;
                     const display = el.classList.contains('math-display');
                     try {
@@ -654,11 +745,17 @@ enum MarkdownHTML {
                             throwOnError: false,
                             output: 'htmlAndMathml'
                         });
+                        el.dataset.mathDone = '1';
                     } catch (err) {
                         el.classList.add('math-error');
                         el.textContent = String((err && err.message) || err);
+                        el.dataset.mathDone = '1';
                     }
                 });
+                window.dispatchEvent(new Event('md-preview-math-rendered'));
+            }
+            if (window.MdPreview && window.MdPreview.registerReapplier) {
+                window.MdPreview.registerReapplier(renderMath);
             }
             if (document.readyState === 'loading') {
                 document.addEventListener('DOMContentLoaded', renderMath, { once: true });
@@ -759,9 +856,16 @@ enum MarkdownHTML {
         }
         let rendered = replaceMatches(of: mermaidRegex, in: html) { diagram in
             """
-            <div class="mermaid" role="img" aria-label="Mermaid diagram">
+            <figure class="mermaid-figure" tabindex="0" role="img" aria-label="Mermaid diagram">
+            <div class="mermaid-stage"><div class="mermaid">
             \(diagram)
+            </div></div>
+            <div class="mermaid-hud" aria-hidden="true">
+            <button type="button" class="mermaid-hud-btn" data-mm-act="out" tabindex="-1" aria-label="Zoom out">−</button>
+            <button type="button" class="mermaid-hud-btn mermaid-hud-level" data-mm-act="reset" tabindex="-1" aria-label="Reset zoom">100%</button>
+            <button type="button" class="mermaid-hud-btn" data-mm-act="in" tabindex="-1" aria-label="Zoom in">+</button>
             </div>
+            </figure>
             """
         }
         return MermaidRenderResult(html: rendered, containsMermaid: true)
@@ -785,23 +889,247 @@ enum MarkdownHTML {
         <script>
         \(safeScript)
 
-        window.addEventListener('load', async () => {
-            const darkMode = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
-            try {
+        (() => {
+            const states = new WeakMap();
+            const queue = [];
+            let draining = false;
+            let initialized = false;
+
+            function ensureInit() {
+                if (initialized) return;
+                initialized = true;
+                const dark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
                 mermaid.initialize({
                     startOnLoad: false,
-                    theme: darkMode ? 'dark' : 'default',
+                    theme: dark ? 'dark' : 'default',
                     securityLevel: 'strict',
                     fontFamily: '-apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif'
                 });
-                await mermaid.run({ querySelector: '.mermaid' });
-            } catch (error) {
-                document.querySelectorAll('.mermaid').forEach((node) => {
-                    node.classList.add('mermaid-error');
-                });
-                console.error('Mermaid rendering failed', error);
             }
-        });
+
+            async function drain() {
+                if (draining) return;
+                draining = true;
+                while (queue.length) {
+                    const figure = queue.shift();
+                    await renderOne(figure);
+                }
+                draining = false;
+                window.dispatchEvent(new Event('md-preview-mermaid-rendered'));
+            }
+
+            async function renderOne(figure) {
+                ensureInit();
+                const node = figure.querySelector('.mermaid');
+                if (!node || node.dataset.mmDone === '1') return;
+                try {
+                    await mermaid.run({ nodes: [node], suppressErrors: true });
+                } catch (err) {
+                    figure.classList.add('mermaid-error');
+                    return;
+                }
+                const svg = node.querySelector('svg');
+                if (!svg) {
+                    figure.classList.add('mermaid-error');
+                    return;
+                }
+                node.dataset.mmDone = '1';
+                attachZoom(figure, svg);
+            }
+
+            function attachZoom(figure, svg) {
+                // Normalize sizing: prefer viewBox, drop intrinsic width/height.
+                let vbW, vbH;
+                const vb = svg.viewBox && svg.viewBox.baseVal;
+                if (vb && vb.width && vb.height) {
+                    vbW = vb.width; vbH = vb.height;
+                } else {
+                    vbW = parseFloat(svg.getAttribute('width')) || svg.getBBox().width || 1;
+                    vbH = parseFloat(svg.getAttribute('height')) || svg.getBBox().height || 1;
+                    svg.setAttribute('viewBox', '0 0 ' + vbW + ' ' + vbH);
+                }
+                svg.removeAttribute('width');
+                svg.removeAttribute('height');
+                svg.style.width = '100%';
+                svg.style.height = '100%';
+                svg.style.transformOrigin = '0 0';
+
+                // Stable layout: figure claims height from the diagram's aspect ratio,
+                // capped by max-height so massive diagrams don't push the page.
+                if (vbW > 0 && vbH > 0) {
+                    figure.style.setProperty('--mm-aspect', vbW + ' / ' + vbH);
+                }
+
+                const state = {
+                    tx: 0, ty: 0, scale: 1, min: 1, max: 8,
+                    rect: null, raf: 0, dragging: false,
+                    lastX: 0, lastY: 0, svg
+                };
+                states.set(figure, state);
+                cacheRect(figure);
+
+                figure.addEventListener('wheel', onWheel, { passive: false });
+                figure.addEventListener('pointerdown', onPointerDown);
+                figure.addEventListener('dblclick', onDoubleClick);
+                const hud = figure.querySelector('.mermaid-hud');
+                if (hud) hud.addEventListener('click', onHudClick);
+            }
+
+            function cacheRect(figure) {
+                const s = states.get(figure);
+                if (s) s.rect = figure.getBoundingClientRect();
+            }
+
+            function apply(figure, s) {
+                if (s.raf) return;
+                s.raf = requestAnimationFrame(() => {
+                    s.raf = 0;
+                    s.svg.style.transform = 'translate(' + s.tx + 'px,' + s.ty + 'px) scale(' + s.scale + ')';
+                    const lvl = figure.querySelector('.mermaid-hud-level');
+                    if (lvl) lvl.textContent = Math.round(s.scale * 100) + '%';
+                });
+            }
+
+            function zoomAt(figure, x, y, k) {
+                const s = states.get(figure);
+                if (!s) return;
+                const next = Math.max(s.min, Math.min(s.max, s.scale * k));
+                if (next === s.scale) return;
+                const ratio = next / s.scale;
+                s.tx = x - (x - s.tx) * ratio;
+                s.ty = y - (y - s.ty) * ratio;
+                s.scale = next;
+                if (s.scale <= 1.001) { s.tx = 0; s.ty = 0; }
+                apply(figure, s);
+            }
+
+            function reset(figure) {
+                const s = states.get(figure);
+                if (!s) return;
+                s.tx = 0; s.ty = 0; s.scale = 1;
+                apply(figure, s);
+            }
+
+            function step(figure, factor) {
+                const s = states.get(figure);
+                if (!s) return;
+                if (!s.rect) cacheRect(figure);
+                const r = s.rect;
+                zoomAt(figure, r.width / 2, r.height / 2, factor);
+            }
+
+            function onWheel(e) {
+                // ⌘/Ctrl + wheel zooms; macOS pinch synthesizes wheel + ctrlKey.
+                // Plain wheel falls through to the page scroll (don't preventDefault).
+                if (!(e.ctrlKey || e.metaKey)) return;
+                const figure = e.currentTarget;
+                const s = states.get(figure);
+                if (!s) return;
+                e.preventDefault();
+                if (!s.rect) cacheRect(figure);
+                const r = s.rect;
+                const k = Math.exp(-e.deltaY * 0.01);
+                zoomAt(figure, e.clientX - r.left, e.clientY - r.top, k);
+            }
+
+            function onPointerDown(e) {
+                if (e.button !== 0) return;
+                const figure = e.currentTarget;
+                const s = states.get(figure);
+                if (!s) return;
+                if (e.target.closest('.mermaid-hud')) return;
+                figure.setPointerCapture(e.pointerId);
+                s.dragging = true;
+                s.lastX = e.clientX;
+                s.lastY = e.clientY;
+                figure.addEventListener('pointermove', onPointerMove);
+                figure.addEventListener('pointerup', onPointerUp);
+                figure.addEventListener('pointercancel', onPointerUp);
+            }
+
+            function onPointerMove(e) {
+                const figure = e.currentTarget;
+                const s = states.get(figure);
+                if (!s || !s.dragging) return;
+                s.tx += e.clientX - s.lastX;
+                s.ty += e.clientY - s.lastY;
+                s.lastX = e.clientX;
+                s.lastY = e.clientY;
+                apply(figure, s);
+            }
+
+            function onPointerUp(e) {
+                const figure = e.currentTarget;
+                const s = states.get(figure);
+                if (!s) return;
+                s.dragging = false;
+                figure.removeEventListener('pointermove', onPointerMove);
+                figure.removeEventListener('pointerup', onPointerUp);
+                figure.removeEventListener('pointercancel', onPointerUp);
+            }
+
+            function onDoubleClick(e) {
+                const figure = e.currentTarget;
+                if (e.target.closest('.mermaid-hud')) return;
+                const s = states.get(figure);
+                if (!s) return;
+                if (s.scale > 1.001) {
+                    reset(figure);
+                } else {
+                    if (!s.rect) cacheRect(figure);
+                    const r = s.rect;
+                    zoomAt(figure, e.clientX - r.left, e.clientY - r.top, 2);
+                }
+            }
+
+            function onHudClick(e) {
+                const btn = e.target.closest('[data-mm-act]');
+                if (!btn) return;
+                e.stopPropagation();
+                const figure = btn.closest('.mermaid-figure');
+                if (!figure) return;
+                figure.focus();
+                switch (btn.dataset.mmAct) {
+                    case 'in':    step(figure, 1.25); break;
+                    case 'out':   step(figure, 0.8);  break;
+                    case 'reset': reset(figure);      break;
+                }
+            }
+
+            const ro = new ResizeObserver((entries) => {
+                for (const entry of entries) cacheRect(entry.target);
+            });
+
+            function bootstrap() {
+                const figures = document.querySelectorAll('.mermaid-figure');
+                if (!figures.length) return;
+                const io = new IntersectionObserver((entries) => {
+                    for (const entry of entries) {
+                        if (entry.isIntersecting) {
+                            io.unobserve(entry.target);
+                            queue.push(entry.target);
+                            ro.observe(entry.target);
+                            drain();
+                        }
+                    }
+                }, { rootMargin: '300px 0px' });
+                figures.forEach((f) => io.observe(f));
+            }
+
+            if (window.MdPreview && window.MdPreview.registerReapplier) {
+                window.MdPreview.registerReapplier(bootstrap);
+            }
+
+            if (window.MdPreview && window.MdPreview.registerReapplier) {
+                window.MdPreview.registerReapplier(bootstrap);
+            }
+
+            if (document.readyState === 'loading') {
+                document.addEventListener('DOMContentLoaded', bootstrap, { once: true });
+            } else {
+                bootstrap();
+            }
+        })();
         </script>
         """
     }()
@@ -847,7 +1175,7 @@ enum MarkdownHTML {
         <script>
         \(safeScript)
 
-        window.addEventListener('load', async () => {
+        async function runShiki() {
             if (!window.MdPreviewShiki || !window.MdPreviewShiki.renderAll) return;
             try {
                 await window.MdPreviewShiki.renderAll(document);
@@ -861,7 +1189,14 @@ enum MarkdownHTML {
                 });
                 console.error('Shiki rendering failed', error);
             }
-        });
+        }
+        if (window.MdPreview && window.MdPreview.registerReapplier) {
+            // Fire-and-forget; the prior content's <pre> nodes are gone (the
+            // article innerHTML was just replaced), so this only highlights
+            // the new blocks.
+            window.MdPreview.registerReapplier(() => { runShiki(); });
+        }
+        window.addEventListener('load', runShiki);
         </script>
         """
     }()
@@ -1065,19 +1400,94 @@ enum MarkdownHTML {
     .shiki-error {
         outline: 1px solid rgba(176, 0, 32, 0.35);
     }
-    .mermaid {
+    .mermaid-figure {
+        position: relative;
         margin: 1.6em 0 0;
-        padding: 16px;
         background: var(--code-bg);
         border-radius: 15px;
-        overflow-x: auto;
-        text-align: center;
+        overflow: hidden;
+        outline: none;
+        aspect-ratio: var(--mm-aspect, 4 / 3);
+        max-height: min(70vh, 720px);
+        contain: layout paint;
+    }
+    .mermaid-figure:focus-visible {
+        box-shadow: 0 0 0 3px color-mix(in srgb, AccentColor 60%, transparent);
+    }
+    .mermaid-stage {
+        position: absolute;
+        inset: 0;
+        overflow: hidden;
+        contain: strict;
+    }
+    .mermaid-figure .mermaid-stage { cursor: grab; }
+    .mermaid-figure .mermaid-stage:active { cursor: grabbing; }
+    .mermaid {
+        position: absolute;
+        inset: 0;
+        padding: 16px;
+        box-sizing: border-box;
     }
     .mermaid svg {
-        max-width: 100%;
-        height: auto;
+        display: block;
+        width: 100%;
+        height: 100%;
+    }
+    .mermaid-hud {
+        position: absolute;
+        top: 8px;
+        right: 8px;
+        display: flex;
+        gap: 2px;
+        padding: 3px;
+        border-radius: 9px;
+        background: color-mix(in srgb, Canvas 75%, transparent);
+        backdrop-filter: blur(20px) saturate(160%);
+        -webkit-backdrop-filter: blur(20px) saturate(160%);
+        opacity: 0;
+        pointer-events: none;
+        transition: opacity 0.12s ease;
+        z-index: 2;
+        font-size: 12px;
+        line-height: 1;
+        color: var(--text);
+        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12);
+    }
+    .mermaid-figure:hover .mermaid-hud,
+    .mermaid-figure:focus-within .mermaid-hud {
+        opacity: 1;
+        pointer-events: auto;
+    }
+    .mermaid-hud-btn {
+        appearance: none;
+        border: none;
+        background: transparent;
+        color: inherit;
+        font: inherit;
+        font-weight: 500;
+        padding: 5px 9px;
+        border-radius: 6px;
+        cursor: pointer;
+        min-width: 26px;
+        text-align: center;
+    }
+    .mermaid-hud-btn:hover {
+        background: color-mix(in srgb, var(--text) 12%, transparent);
+    }
+    .mermaid-hud-btn:active {
+        background: color-mix(in srgb, var(--text) 18%, transparent);
+    }
+    .mermaid-hud-level {
+        min-width: 46px;
+        font-variant-numeric: tabular-nums;
+    }
+    @media (prefers-reduced-motion: reduce) {
+        .mermaid-hud { transition: none; }
     }
     .mermaid-error {
+        position: static;
+        aspect-ratio: auto;
+        padding: 12px 16px;
         text-align: left;
         white-space: pre-wrap;
         font-family: ui-monospace, "SF Mono", Menlo, monospace;

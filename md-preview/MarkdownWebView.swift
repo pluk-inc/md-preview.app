@@ -27,15 +27,24 @@ final class MarkdownWebView: NSView, WKNavigationDelegate {
     var fragmentLinkActivated: ((String) -> Void)?
     private let assetScheme = MarkdownAssetScheme()
     private var currentAssetBase: URL?
-    private var scheduledHeightUpdates: [DispatchWorkItem] = []
-    private var lastMeasuredWidth: CGFloat = 0
+    private let messageBridge = HostBridge()
+
+    private struct RendererFingerprint: Equatable {
+        let math: Bool
+        let mermaid: Bool
+        let shiki: Bool
+    }
+    private var loadedFingerprint: RendererFingerprint?
+    private var isPageReady = false
 
     override init(frame frameRect: NSRect) {
         let config = WKWebViewConfiguration()
         config.setURLSchemeHandler(assetScheme, forURLScheme: MarkdownAssetScheme.scheme)
+        config.userContentController.add(messageBridge, name: HostBridge.name)
         webView = NonScrollingWKWebView(frame: .zero, configuration: config)
         super.init(frame: frameRect)
 
+        messageBridge.owner = self
         webView.setValue(false, forKey: "drawsBackground")
         webView.navigationDelegate = self
         webView.translatesAutoresizingMaskIntoConstraints = false
@@ -56,9 +65,6 @@ final class MarkdownWebView: NSView, WKNavigationDelegate {
     override func layout() {
         super.layout()
         neutralizeWebKitScrollEdgeInsets()
-        guard abs(bounds.width - lastMeasuredWidth) > 0.5 else { return }
-        lastMeasuredWidth = bounds.width
-        recalculateDocumentHeight()
     }
 
     override func viewDidMoveToWindow() {
@@ -68,43 +74,38 @@ final class MarkdownWebView: NSView, WKNavigationDelegate {
 
     func display(markdown: String, assetBaseURL: URL? = nil) {
         assetScheme.setBaseURL(assetBaseURL)
-        let baseHref = assetBaseURL == nil ? nil : "\(MarkdownAssetScheme.scheme):///"
+        let baseHref = "\(MarkdownAssetScheme.scheme):///"
         let rendered = MarkdownHTML.render(markdown: markdown, assetBaseHref: baseHref)
-        webView.loadHTMLString(rendered.html, baseURL: nil)
+        let fingerprint = RendererFingerprint(
+            math: rendered.containsMath,
+            mermaid: rendered.containsMermaid,
+            shiki: rendered.containsHighlightedCode
+        )
         currentAssetBase = assetBaseURL
-        if rendered.containsMermaid {
-            scheduleAsyncRenderHeightUpdates(delays: [0.6, 1.2, 2.4])
+
+        // Fast path: page is already loaded and uses the same renderer mix —
+        // swap the article body via JS instead of reloading the WKWebView
+        // (which would re-parse and re-execute the multi-MB vendor bundles).
+        if isPageReady, loadedFingerprint == fingerprint {
+            let payload = javaScriptStringLiteral(rendered.articleHTML)
+            webView.evaluateJavaScript("window.MdPreview && MdPreview.update(\(payload));") { _, _ in }
+            return
         }
-        if rendered.containsMath {
-            scheduleAsyncRenderHeightUpdates(delays: [0.15, 0.4, 0.9])
-        }
-        if rendered.containsHighlightedCode {
-            scheduleAsyncRenderHeightUpdates(delays: [0.15, 0.4, 0.9])
-        }
+
+        webView.loadHTMLString(rendered.html, baseURL: nil)
+        loadedFingerprint = fingerprint
+        isPageReady = false
     }
 
-    // KaTeX, Mermaid, and Shiki all finish after `didFinish`, so the initial
-    // measurement can miss their final height. Re-measure a few times to catch
-    // the growth.
-    private func scheduleAsyncRenderHeightUpdates(delays: [TimeInterval]) {
-        for delay in delays {
-            DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
-                self?.recalculateDocumentHeight()
-            }
-        }
-    }
-
-    func recalculateDocumentHeight() {
-        scheduledHeightUpdates.forEach { $0.cancel() }
-        scheduledHeightUpdates.removeAll()
-
-        for delay in [0.0, 0.08, 0.24] {
-            let update = DispatchWorkItem { [weak self] in
-                self?.neutralizeWebKitScrollEdgeInsets()
-                self?.updateDocumentHeight()
-            }
-            scheduledHeightUpdates.append(update)
-            DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: update)
+    fileprivate func didReceiveHostMessage(_ body: Any) {
+        guard let dict = body as? [String: Any],
+              let kind = dict["kind"] as? String else { return }
+        switch kind {
+        case "height":
+            guard let value = dict["value"] as? NSNumber else { return }
+            heightDidChange?(ceil(CGFloat(truncating: value)))
+        default:
+            break
         }
     }
 
@@ -387,39 +388,6 @@ final class MarkdownWebView: NSView, WKNavigationDelegate {
         }
     }
 
-    private func updateDocumentHeight() {
-        let script = """
-        (() => {
-            const body = document.body;
-            const article = document.querySelector('.markdown-body');
-            if (!body || !article) { return 1; }
-
-            const articleRect = article.getBoundingClientRect();
-            const bodyStyle = window.getComputedStyle(body);
-            const paddingTop = parseFloat(bodyStyle.paddingTop) || 0;
-            const paddingBottom = parseFloat(bodyStyle.paddingBottom) || 0;
-
-            return Math.max(
-                articleRect.bottom + paddingBottom,
-                paddingTop + article.scrollHeight + paddingBottom,
-                1
-            );
-        })()
-        """
-        webView.evaluateJavaScript(script) { [weak self] result, _ in
-            guard let self else { return }
-            let height: CGFloat
-            if let number = result as? NSNumber {
-                height = CGFloat(truncating: number)
-            } else if let double = result as? Double {
-                height = CGFloat(double)
-            } else {
-                height = 1
-            }
-            self.heightDidChange?(ceil(height))
-        }
-    }
-
     func webView(_ webView: WKWebView,
                  decidePolicyFor navigationAction: WKNavigationAction,
                  decisionHandler: @escaping @MainActor @Sendable (WKNavigationActionPolicy) -> Void) {
@@ -441,7 +409,7 @@ final class MarkdownWebView: NSView, WKNavigationDelegate {
 
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
         neutralizeWebKitScrollEdgeInsets()
-        recalculateDocumentHeight()
+        isPageReady = true
     }
 
     private func sameDocumentFragmentID(from url: URL) -> String? {
@@ -477,5 +445,19 @@ private final class NonScrollingWKWebView: WKWebView {
         } else {
             super.scrollWheel(with: event)
         }
+    }
+}
+
+// Receives postMessage() calls from the page's host-bridge script. Held weakly
+// by the WKUserContentController via this proxy so the MarkdownWebView itself
+// is free to deallocate without a retain cycle through the config.
+private final class HostBridge: NSObject, WKScriptMessageHandler {
+    static let name = "mdPreviewHost"
+    weak var owner: MarkdownWebView?
+
+    func userContentController(_ userContentController: WKUserContentController,
+                               didReceive message: WKScriptMessage) {
+        guard message.name == HostBridge.name else { return }
+        owner?.didReceiveHostMessage(message.body)
     }
 }
