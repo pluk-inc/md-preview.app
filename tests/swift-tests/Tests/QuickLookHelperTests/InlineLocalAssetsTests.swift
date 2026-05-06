@@ -104,6 +104,17 @@ final class InlineLocalAssetsTests: XCTestCase {
         XCTAssertEqual(result.html, html)
     }
 
+    func testSingleQuotedRawHTMLImageLeftAlone() {
+        let html = #"<img src='images/local.png'>"#
+        let result = InlineLocalAssets.rewriteRelativeImages(
+            html: html,
+            baseDirectory: baseDir,
+            reader: { _ in XCTFail("reader must not be called"); return Data() }
+        )
+        XCTAssertEqual(result.html, html)
+        XCTAssertTrue(result.attachments.isEmpty)
+    }
+
     // MARK: - Failure tolerance
 
     func testReadFailureLeavesSrcAlone() {
