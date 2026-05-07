@@ -64,6 +64,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSToolbarDelegate, NSSharing
         let toolbar = NSToolbar(identifier: "MainToolbar")
         toolbar.delegate = self
         toolbar.displayMode = .iconOnly
+        toolbar.allowsUserCustomization = true
         window.toolbar = toolbar
         window.toolbarStyle = .automatic
 
@@ -343,12 +344,12 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSToolbarDelegate, NSSharing
         bar.onNext = { [weak self] in self?.findFromToolbar(backwards: false) }
         bar.onDone = { [weak self] in self?.dismissFindBar() }
         bar.onModeChanged = { [weak self] mode in self?.searchModeDidChange(mode) }
-
-        // Default `.automatic` — `.hard` deadlocks initial layout against our
-        // nested non-scrolling WKWebView. Find bar's own bottom rule gives
-        // the dividing line either way.
         self.findBar = bar
-        self.findBarAccessory = addBottomTitlebarAccessory(bar)
+        self.findBarAccessory = addBottomTitlebarAccessory(bar) { accessory in
+            if #available(macOS 26.1, *) {
+                accessory.preferredScrollEdgeEffectStyle = .hard
+            }
+        }
     }
 
     private func dismissFindBar() {
@@ -731,11 +732,15 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSToolbarDelegate, NSSharing
         self.accessBannerAccessory = addBottomTitlebarAccessory(banner)
     }
 
-    private func addBottomTitlebarAccessory(_ view: NSView) -> NSTitlebarAccessoryViewController {
+    private func addBottomTitlebarAccessory(
+        _ view: NSView,
+        configure: ((NSTitlebarAccessoryViewController) -> Void)? = nil
+    ) -> NSTitlebarAccessoryViewController {
         let accessory = NSTitlebarAccessoryViewController()
         accessory.layoutAttribute = .bottom
         accessory.view = view
         accessory.isHidden = true
+        configure?(accessory)
         window.addTitlebarAccessoryViewController(accessory)
         return accessory
     }

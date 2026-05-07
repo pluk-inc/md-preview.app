@@ -63,8 +63,6 @@ final class ContentViewController: NSViewController {
 
         lastLaidOutSize = laidOutSize
         applyDocumentHeight()
-        // Width changes propagate to body via the WKWebView; the JS-side
-        // ResizeObserver pushes a fresh height back automatically.
     }
 
     func display(markdown: String, assetBaseURL: URL? = nil) {
@@ -89,8 +87,6 @@ final class ContentViewController: NSViewController {
                 if needsScroll {
                     self.scrollDocument(to: top)
                 }
-                // Burst on every navigation. When we just scrolled, delay so
-                // the animation lines up with the match arriving in view.
                 let delay: TimeInterval = needsScroll ? 0.18 : 0
                 let work = DispatchWorkItem { [weak self] in
                     self?.webView.flashCurrentMatch()
@@ -105,9 +101,6 @@ final class ContentViewController: NSViewController {
     private func isMatchVisible(top: CGFloat, bottom: CGFloat) -> Bool {
         guard let scrollView = view as? NSScrollView else { return true }
         let clipView = scrollView.contentView
-        // The toolbar (and any titlebar accessory like the find bar) sits over
-        // the top of the clip view via contentInsets — content under that band
-        // is technically inside bounds but visually hidden, so don't count it.
         let visibleTop = clipView.bounds.origin.y + clipView.contentInsets.top
         let visibleBottom = clipView.bounds.origin.y
             + clipView.bounds.height
@@ -137,10 +130,6 @@ final class ContentViewController: NSViewController {
     private func scrollDocument(to y: CGFloat) {
         guard let scrollView = view as? NSScrollView else { return }
         let clipView = scrollView.contentView
-        // `y` is the heading's position in document coordinates. The clip
-        // view has a top contentInset that matches the unified toolbar (and
-        // any titlebar accessory like the folder-access banner) — without
-        // subtracting it, the heading lands underneath the toolbar.
         let topInset = clipView.contentInsets.top
         let bottomInset = clipView.contentInsets.bottom
         let topMargin: CGFloat = 12
