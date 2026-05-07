@@ -43,7 +43,6 @@ enum MarkdownHTML {
         let scrollOverride = allowsScroll ? """
         <style>
         html, body { overflow: auto !important; }
-        ::-webkit-scrollbar { display: initial !important; width: auto !important; height: auto !important; }
         </style>
         """ : ""
         let baseTag = assetBaseHref.map { "<base href=\"\($0)\">" } ?? ""

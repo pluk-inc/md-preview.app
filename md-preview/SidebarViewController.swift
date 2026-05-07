@@ -9,23 +9,17 @@ final class SidebarViewController: NSViewController {
 
     var onSelectHeading: ((Int) -> Void)?
 
-    private var titleLabel: NSTextField!
     private var scrollView: NSScrollView!
     private var outlineView: NSOutlineView!
     private var roots: [TOCNode] = []
+    private var titleItem: TitleItem?
+    private var lastRenderedMarkdown: String?
+    private var lastRenderedFileName: String?
+
+    private var titleOffset: Int { titleItem == nil ? 0 : 1 }
 
     override func loadView() {
         let container = NSView()
-
-        titleLabel = NSTextField(labelWithString: "")
-        titleLabel.translatesAutoresizingMaskIntoConstraints = false
-        titleLabel.font = NSFont.systemFont(ofSize: 12, weight: .semibold)
-        titleLabel.textColor = .secondaryLabelColor
-        titleLabel.lineBreakMode = .byTruncatingMiddle
-        titleLabel.cell?.usesSingleLineMode = true
-        titleLabel.maximumNumberOfLines = 1
-        titleLabel.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
-        container.addSubview(titleLabel)
 
         scrollView = NSScrollView()
         scrollView.translatesAutoresizingMaskIntoConstraints = false
@@ -39,7 +33,6 @@ final class SidebarViewController: NSViewController {
         outlineView.headerView = nil
         outlineView.allowsMultipleSelection = false
         outlineView.allowsEmptySelection = true
-        outlineView.usesAutomaticRowHeights = true
         outlineView.dataSource = self
         outlineView.delegate = self
         outlineView.target = self
@@ -54,11 +47,7 @@ final class SidebarViewController: NSViewController {
         scrollView.documentView = outlineView
 
         NSLayoutConstraint.activate([
-            titleLabel.topAnchor.constraint(equalTo: container.safeAreaLayoutGuide.topAnchor, constant: 8),
-            titleLabel.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 14),
-            titleLabel.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -14),
-
-            scrollView.topAnchor.constraint(equalTo: titleLabel.bottomAnchor, constant: 8),
+            scrollView.topAnchor.constraint(equalTo: container.topAnchor),
             scrollView.leadingAnchor.constraint(equalTo: container.leadingAnchor),
             scrollView.trailingAnchor.constraint(equalTo: container.trailingAnchor),
             scrollView.bottomAnchor.constraint(equalTo: container.bottomAnchor)
@@ -69,8 +58,10 @@ final class SidebarViewController: NSViewController {
 
     func display(markdown: String, fileName: String) {
         loadViewIfNeeded()
-        titleLabel.stringValue = fileName
-        titleLabel.isHidden = fileName.isEmpty
+        guard markdown != lastRenderedMarkdown || fileName != lastRenderedFileName else { return }
+        lastRenderedMarkdown = markdown
+        lastRenderedFileName = fileName
+        titleItem = fileName.isEmpty ? nil : TitleItem(title: fileName)
         roots = MarkdownTOC.parse(markdown).map(TOCNode.init)
         outlineView.reloadData()
         for root in roots {
@@ -83,6 +74,11 @@ final class SidebarViewController: NSViewController {
         guard row >= 0, let node = outlineView.item(atRow: row) as? TOCNode else { return }
         onSelectHeading?(node.headingID)
     }
+}
+
+private final class TitleItem {
+    let title: String
+    init(title: String) { self.title = title }
 }
 
 final class TOCNode {
@@ -103,12 +99,13 @@ extension SidebarViewController: NSOutlineViewDataSource {
 
     func outlineView(_ outlineView: NSOutlineView, numberOfChildrenOfItem item: Any?) -> Int {
         if let node = item as? TOCNode { return node.children.count }
-        return roots.count
+        return roots.count + titleOffset
     }
 
     func outlineView(_ outlineView: NSOutlineView, child index: Int, ofItem item: Any?) -> Any {
         if let node = item as? TOCNode { return node.children[index] }
-        return roots[index]
+        if let titleItem, index == 0 { return titleItem }
+        return roots[index - titleOffset]
     }
 
     func outlineView(_ outlineView: NSOutlineView, isItemExpandable item: Any) -> Bool {
@@ -122,6 +119,9 @@ extension SidebarViewController: NSOutlineViewDelegate {
     func outlineView(_ outlineView: NSOutlineView,
                      viewFor tableColumn: NSTableColumn?,
                      item: Any) -> NSView? {
+        if let titleItem = item as? TitleItem {
+            return titleCell(for: titleItem, in: outlineView)
+        }
         guard let node = item as? TOCNode else { return nil }
 
         let identifier = NSUserInterfaceItemIdentifier("TOCCell")
@@ -152,6 +152,45 @@ extension SidebarViewController: NSOutlineViewDelegate {
         }
 
         cell.textField?.stringValue = node.title
+        return cell
+    }
+
+    func outlineView(_ outlineView: NSOutlineView, shouldSelectItem item: Any) -> Bool {
+        return item is TOCNode
+    }
+
+    func outlineView(_ outlineView: NSOutlineView, heightOfRowByItem item: Any) -> CGFloat {
+        if item is TitleItem { return 27 }
+        return 29
+    }
+
+    private func titleCell(for titleItem: TitleItem, in outlineView: NSOutlineView) -> NSView {
+        let identifier = NSUserInterfaceItemIdentifier("TitleCell")
+        let cell: NSTableCellView
+        if let recycled = outlineView.makeView(withIdentifier: identifier, owner: self) as? NSTableCellView {
+            cell = recycled
+        } else {
+            cell = NSTableCellView()
+            cell.identifier = identifier
+
+            let textField = NSTextField(labelWithString: "")
+            textField.translatesAutoresizingMaskIntoConstraints = false
+            textField.font = NSFont.systemFont(ofSize: 12, weight: .semibold)
+            textField.textColor = .secondaryLabelColor
+            textField.lineBreakMode = .byTruncatingMiddle
+            textField.cell?.usesSingleLineMode = true
+            textField.maximumNumberOfLines = 1
+            cell.addSubview(textField)
+            cell.textField = textField
+
+            NSLayoutConstraint.activate([
+                textField.leadingAnchor.constraint(equalTo: cell.leadingAnchor),
+                textField.trailingAnchor.constraint(equalTo: cell.trailingAnchor),
+                textField.topAnchor.constraint(equalTo: cell.topAnchor, constant: 8),
+                textField.bottomAnchor.constraint(equalTo: cell.bottomAnchor, constant: -4)
+            ])
+        }
+        cell.textField?.stringValue = titleItem.title
         return cell
     }
 }

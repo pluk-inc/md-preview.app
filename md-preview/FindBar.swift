@@ -16,7 +16,9 @@ final class FindBar: NSView {
     var onDone: (() -> Void)?
     var onModeChanged: ((SearchMode) -> Void)?
 
-    private let modeControl = NSSegmentedControl()
+    private let modeLabel = NSTextField(labelWithString: "Match:")
+    private let containsButton = NSButton(title: "Contains", target: nil, action: nil)
+    private let beginsWithButton = NSButton(title: "Begins With", target: nil, action: nil)
     private let countLabel = NSTextField(labelWithString: "")
     private let navigationControl = NSSegmentedControl()
     private let doneButton = NSButton(title: "Done", target: nil, action: nil)
@@ -25,11 +27,6 @@ final class FindBar: NSView {
     private enum NavigationSegment: Int {
         case previous = 0
         case next = 1
-    }
-
-    private enum ModeSegment: Int {
-        case contains = 0
-        case beginsWith = 1
     }
 
     override init(frame frameRect: NSRect) {
@@ -59,8 +56,11 @@ final class FindBar: NSView {
         countLabel.alignment = .right
         countLabel.translatesAutoresizingMaskIntoConstraints = false
 
-        configureModeControl()
+        configureModeButtons()
         configureNavigationControl()
+
+        modeLabel.font = .systemFont(ofSize: NSFont.systemFontSize)
+        modeLabel.textColor = .secondaryLabelColor
 
         doneButton.bezelStyle = .rounded
         doneButton.controlSize = .regular
@@ -68,7 +68,7 @@ final class FindBar: NSView {
         doneButton.action = #selector(doneTapped)
         doneButton.translatesAutoresizingMaskIntoConstraints = false
 
-        let leadingStack = NSStackView(views: [modeControl])
+        let leadingStack = NSStackView(views: [modeLabel, containsButton, beginsWithButton])
         leadingStack.orientation = .horizontal
         leadingStack.spacing = 8
         leadingStack.alignment = .centerY
@@ -109,16 +109,19 @@ final class FindBar: NSView {
         ])
     }
 
-    private func configureModeControl() {
-        modeControl.segmentStyle = .automatic
-        modeControl.trackingMode = .selectOne
-        modeControl.segmentCount = 2
-        modeControl.setLabel("Contains", forSegment: ModeSegment.contains.rawValue)
-        modeControl.setLabel("Begins With", forSegment: ModeSegment.beginsWith.rawValue)
-        modeControl.selectedSegment = ModeSegment.contains.rawValue
-        modeControl.target = self
-        modeControl.action = #selector(modeTapped(_:))
-        modeControl.translatesAutoresizingMaskIntoConstraints = false
+    private func configureModeButtons() {
+        for button in [containsButton, beginsWithButton] {
+            button.bezelStyle = .flexiblePush
+            button.controlSize = .small
+            button.showsBorderOnlyWhileMouseInside = true
+            button.setButtonType(.pushOnPushOff)
+            button.setAccessibilitySubrole(.toggle)
+            button.target = self
+            button.action = #selector(modeButtonTapped(_:))
+            button.translatesAutoresizingMaskIntoConstraints = false
+        }
+        containsButton.state = .on
+        beginsWithButton.state = .off
     }
 
     private func configureNavigationControl() {
@@ -155,12 +158,13 @@ final class FindBar: NSView {
         }
     }
 
-    @objc private func modeTapped(_ sender: NSSegmentedControl) {
-        let mode: SearchMode = sender.selectedSegment == ModeSegment.beginsWith.rawValue
-            ? .beginsWith
-            : .contains
+    @objc private func doneTapped() { onDone?() }
+
+    @objc private func modeButtonTapped(_ sender: NSButton) {
+        let mode: SearchMode = sender === beginsWithButton ? .beginsWith : .contains
+        guard containsButton.state != (mode == .contains ? .on : .off) else { return }
+        containsButton.state = mode == .contains ? .on : .off
+        beginsWithButton.state = mode == .beginsWith ? .on : .off
         onModeChanged?(mode)
     }
-
-    @objc private func doneTapped() { onDone?() }
 }
