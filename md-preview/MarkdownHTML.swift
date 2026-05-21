@@ -765,10 +765,32 @@ nonisolated enum MarkdownHTML {
                 const button = document.createElement('button');
                 button.type = 'button';
                 button.className = 'md-code-copy';
-                button.textContent = 'Copy';
                 button.setAttribute('aria-label', 'Copy code');
                 wrap.appendChild(button);
             });
+        }
+
+        function cloneSelectionWithoutCopyButtons(selection) {
+            const fragment = document.createDocumentFragment();
+            for (let i = 0; i < selection.rangeCount; i += 1) {
+                fragment.appendChild(selection.getRangeAt(i).cloneContents());
+            }
+            const buttons = fragment.querySelectorAll('.md-code-copy');
+            if (buttons.length === 0) return null;
+            buttons.forEach((button) => button.remove());
+            return fragment;
+        }
+
+        function plainTextFromFragment(fragment) {
+            const div = document.createElement('div');
+            div.appendChild(fragment.cloneNode(true));
+            return div.innerText || div.textContent || '';
+        }
+
+        function htmlFromFragment(fragment) {
+            const div = document.createElement('div');
+            div.appendChild(fragment.cloneNode(true));
+            return div.innerHTML;
         }
 
         async function copyCodeBlock(button) {
@@ -787,12 +809,10 @@ nonisolated enum MarkdownHTML {
                 } catch (e) {}
             }
             if (!copied) return;
-            button.textContent = 'Copied';
             button.setAttribute('aria-label', 'Code copied');
             button.classList.add('is-copied');
             clearTimeout(button.__mdCopyTimer);
             button.__mdCopyTimer = setTimeout(() => {
-                button.textContent = 'Copy';
                 button.setAttribute('aria-label', 'Copy code');
                 button.classList.remove('is-copied');
             }, 1100);
@@ -804,6 +824,16 @@ nonisolated enum MarkdownHTML {
             event.preventDefault();
             event.stopPropagation();
             copyCodeBlock(button);
+        });
+
+        document.addEventListener('copy', (event) => {
+            const selection = window.getSelection();
+            if (!selection || selection.rangeCount === 0 || !event.clipboardData) return;
+            const fragment = cloneSelectionWithoutCopyButtons(selection);
+            if (!fragment) return;
+            event.clipboardData.setData('text/plain', plainTextFromFragment(fragment));
+            event.clipboardData.setData('text/html', htmlFromFragment(fragment));
+            event.preventDefault();
         });
 
         // Vendor lazy-load helpers. rAF is paused while the WKWebView is
@@ -1789,7 +1819,15 @@ nonisolated enum MarkdownHTML {
                     color 120ms ease,
                     background-color 120ms ease,
                     transform 120ms ease;
+        user-select: none;
+        -webkit-user-select: none;
         z-index: 2;
+    }
+    .md-code-copy::after {
+        content: "Copy";
+    }
+    .md-code-copy.is-copied::after {
+        content: "Copied";
     }
     .md-code-wrap:hover .md-code-copy,
     .md-code-wrap:focus-within .md-code-copy,
